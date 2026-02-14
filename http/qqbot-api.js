@@ -1,6 +1,7 @@
 import BotUtil from '../../../src/utils/botutil.js';
 import { HttpResponse } from '../../../src/utils/http-utils.js';
 import ConfigLoader from '../../../src/infrastructure/commonconfig/loader.js';
+import { Bot as QQBotSDK } from 'qq-group-bot';
 
 const ensureAuthorized = (req, res, Bot) => {
   if (Bot.checkApiAuthorization?.(req)) return true;
@@ -10,6 +11,10 @@ const ensureAuthorized = (req, res, Bot) => {
 
 const getConfigInstance = () => {
   return ConfigLoader.get('qqbot');
+};
+
+const getTasker = (Bot) => {
+  return Bot.tasker.find(t => t.id === 'QQBot');
 };
 
 export default {
@@ -24,7 +29,7 @@ export default {
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
         if (!ensureAuthorized(req, res, Bot)) return;
 
-        const tasker = Bot.tasker.find(t => t.id === 'QQBot');
+        const tasker = getTasker(Bot);
         if (!tasker) {
           return HttpResponse.notFound(res, 'QQBot Tasker 未加载');
         }
@@ -37,7 +42,6 @@ export default {
             avatar: bot.avatar,
             status: 'online',
             startTime: bot.stat?.start_time,
-            messageCount: bot.callback ? Object.keys(bot.callback).length : 0,
           });
         }
 
@@ -62,7 +66,13 @@ export default {
         }
 
         const data = await config.read();
-        HttpResponse.success(res, { data });
+        const accounts = (data.accounts || []).map(a => ({
+          name: a.name,
+          appId: a.appId,
+          enabled: a.enabled !== false,
+          markdownSupport: a.markdownSupport,
+        }));
+        HttpResponse.success(res, { accounts, bot: data.bot, toQRCode: data.toQRCode });
       }, 'qqbot.config.read')
     },
 
@@ -77,47 +87,74 @@ export default {
           return HttpResponse.notFound(res, 'QQBot配置实例未找到');
         }
 
-        const { data, backup = true, validate = true } = req.body || {};
+        const { data } = req.body || {};
         if (!data) {
           return HttpResponse.validationError(res, '缺少配置数据');
         }
 
-        await config.write(data, { backup, validate });
+        await config.write(data);
         HttpResponse.success(res, null, '配置已保存');
       }, 'qqbot.config.write')
     },
 
     {
-      method: 'GET',
-      path: '/api/qqbot/tokens',
+      method: 'POST',
+      path: '/api/qqbot/test-connect',
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
         if (!ensureAuthorized(req, res, Bot)) return;
+
+        const { appId, clientSecret } = req.body || {};
+        if (!appId || !clientSecret) {
+          return HttpResponse.validationError(res, '缺少appId或clientSecret');
+        }
 
         const config = getConfigInstance();
         if (!config) {
           return HttpResponse.notFound(res, 'QQBot配置实例未找到');
         }
 
-        const data = await config.read();
-        const tokens = (data.token || []).map(t => {
-          const parts = t.split(':');
-          return {
-            id: parts[0],
-            appid: parts[1],
-            hasToken: !!parts[2],
-            hasSecret: !!parts[3],
-            groupMsg: parts[4] === '1',
-            guildMsg: parts[5] === '1',
-          };
-        });
+        const configData = await config.read();
+        const botConfig = configData.bot || {};
 
-        HttpResponse.success(res, { tokens, count: tokens.length });
-      }, 'qqbot.tokens.list')
+        try {
+          const testBot = new QQBotSDK({
+            ...botConfig,
+            appid: appId,
+            secret: clientSecret,
+            intents: ['GROUP_AT_MESSAGE_CREATE', 'C2C_MESSAGE_CREATE'],
+          });
+
+          await new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              testBot.stop();
+              reject(new Error('连接超时'));
+            }, 15000);
+
+            testBot.sessionManager.once('READY', () => {
+              clearTimeout(timeout);
+              testBot.stop();
+              resolve();
+            });
+
+            testBot.sessionManager.once('DEAD', (data) => {
+              clearTimeout(timeout);
+              reject(new Error(data.msg || '连接失败'));
+            });
+
+            testBot.start();
+          });
+
+          HttpResponse.success(res, { success: true }, '连接测试成功');
+        } catch (err) {
+          BotUtil.makeLog('error', `QQBot连接测试失败: ${err.message}`, 'QQBotAPI', err);
+          HttpResponse.error(res, err, 400, 'qqbot.test-connect');
+        }
+      }, 'qqbot.test-connect')
     },
 
     {
       method: 'POST',
-      path: '/api/qqbot/tokens',
+      path: '/api/qqbot/accounts',
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
         if (!ensureAuthorized(req, res, Bot)) return;
 
@@ -126,19 +163,40 @@ export default {
           return HttpResponse.notFound(res, 'QQBot配置实例未找到');
         }
 
-        const { token } = req.body || {};
-        if (!token) {
-          return HttpResponse.validationError(res, '缺少token参数');
+        const { appId, clientSecret, name, enabled = true, markdownSupport = false } = req.body || {};
+        if (!appId || !clientSecret) {
+          return HttpResponse.validationError(res, '缺少appId或clientSecret');
         }
 
-        const tokens = await config.addToken(token);
-        HttpResponse.success(res, { tokens, count: tokens.length }, 'Token已添加');
-      }, 'qqbot.tokens.add')
+        const data = await config.read();
+        if (!data.accounts) data.accounts = [];
+        
+        const existingIndex = data.accounts.findIndex(a => a.appId === appId);
+        const account = { name: name || appId, appId, clientSecret, enabled, markdownSupport };
+        
+        if (existingIndex >= 0) {
+          data.accounts[existingIndex] = account;
+        } else {
+          data.accounts.push(account);
+        }
+        
+        await config.write(data);
+
+        const tasker = getTasker(Bot);
+        if (tasker && enabled !== false) {
+          if (existingIndex >= 0) {
+            await tasker.disconnect(appId);
+          }
+          await tasker.connect(account);
+        }
+
+        HttpResponse.success(res, { accounts: data.accounts }, '账号已保存并连接');
+      }, 'qqbot.accounts.add')
     },
 
     {
       method: 'DELETE',
-      path: '/api/qqbot/tokens/:id',
+      path: '/api/qqbot/accounts/:appId',
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
         if (!ensureAuthorized(req, res, Bot)) return;
 
@@ -147,17 +205,40 @@ export default {
           return HttpResponse.notFound(res, 'QQBot配置实例未找到');
         }
 
-        const { id } = req.params;
+        const { appId } = req.params;
         const data = await config.read();
-        const token = (data.token || []).find(t => t.startsWith(`${id}:`));
         
-        if (!token) {
-          return HttpResponse.notFound(res, `Token ${id} 不存在`);
+        if (!data.accounts || !data.accounts.find(a => a.appId === appId)) {
+          return HttpResponse.notFound(res, `账号 ${appId} 不存在`);
         }
 
-        const tokens = await config.removeToken(token);
-        HttpResponse.success(res, { tokens, count: tokens.length }, 'Token已删除');
-      }, 'qqbot.tokens.remove')
+        data.accounts = data.accounts.filter(a => a.appId !== appId);
+        await config.write(data);
+
+        const tasker = getTasker(Bot);
+        if (tasker) {
+          await tasker.disconnect(appId);
+        }
+
+        HttpResponse.success(res, { accounts: data.accounts }, '账号已删除');
+      }, 'qqbot.accounts.remove')
+    },
+
+    {
+      method: 'POST',
+      path: '/api/qqbot/disconnect/:appId',
+      handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
+        if (!ensureAuthorized(req, res, Bot)) return;
+
+        const tasker = getTasker(Bot);
+        if (!tasker) {
+          return HttpResponse.notFound(res, 'QQBot Tasker 未加载');
+        }
+
+        const { appId } = req.params;
+        await tasker.disconnect(appId);
+        HttpResponse.success(res, null, '已断开连接');
+      }, 'qqbot.disconnect')
     },
 
     {
@@ -166,7 +247,7 @@ export default {
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
         if (!ensureAuthorized(req, res, Bot)) return;
 
-        const tasker = Bot.tasker.find(t => t.id === 'QQBot');
+        const tasker = getTasker(Bot);
         if (!tasker) {
           return HttpResponse.notFound(res, 'QQBot Tasker 未加载');
         }
@@ -179,58 +260,6 @@ export default {
           HttpResponse.error(res, err, 500, 'qqbot.reload');
         }
       }, 'qqbot.reload')
-    },
-
-    {
-      method: 'POST',
-      path: '/api/qqbot/connect',
-      handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
-        if (!ensureAuthorized(req, res, Bot)) return;
-
-        const tasker = Bot.tasker.find(t => t.id === 'QQBot');
-        if (!tasker) {
-          return HttpResponse.notFound(res, 'QQBot Tasker 未加载');
-        }
-
-        const { token } = req.body || {};
-        if (!token) {
-          return HttpResponse.validationError(res, '缺少token参数');
-        }
-
-        try {
-          const result = await tasker.connect(token);
-          if (result) {
-            HttpResponse.success(res, null, '连接成功');
-          } else {
-            HttpResponse.error(res, new Error('连接失败'), 500, 'qqbot.connect');
-          }
-        } catch (err) {
-          BotUtil.makeLog('error', `QQBot连接失败: ${err.message}`, 'QQBotAPI', err);
-          HttpResponse.error(res, err, 500, 'qqbot.connect');
-        }
-      }, 'qqbot.connect')
-    },
-
-    {
-      method: 'POST',
-      path: '/api/qqbot/disconnect/:id',
-      handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
-        if (!ensureAuthorized(req, res, Bot)) return;
-
-        const tasker = Bot.tasker.find(t => t.id === 'QQBot');
-        if (!tasker) {
-          return HttpResponse.notFound(res, 'QQBot Tasker 未加载');
-        }
-
-        const { id } = req.params;
-        try {
-          await tasker.disconnect(id);
-          HttpResponse.success(res, null, '已断开连接');
-        } catch (err) {
-          BotUtil.makeLog('error', `QQBot断开失败: ${err.message}`, 'QQBotAPI', err);
-          HttpResponse.error(res, err, 500, 'qqbot.disconnect');
-        }
-      }, 'qqbot.disconnect')
     },
   ]
 };

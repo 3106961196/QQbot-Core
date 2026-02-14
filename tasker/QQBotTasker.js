@@ -2,6 +2,7 @@ import path from "node:path"
 import { ulid } from "ulid"
 import { Bot as QQBotSDK } from "qq-group-bot"
 import QRCode from "qrcode"
+import imageSize from "image-size"
 import urlRegexSafe from "url-regex-safe"
 import { encode as encodeSilk, isSilk } from "silk-wasm"
 import ConfigLoader from "../../../src/infrastructure/commonconfig/loader.js"
@@ -68,10 +69,11 @@ Bot.tasker.push(
     }
 
     async setupBots() {
-      if (!this.config.token || !Array.isArray(this.config.token)) return
-      
-      for (const tokenStr of this.config.token) {
-        await this.connect(tokenStr)
+      const accounts = this.config.accounts || []
+      for (const account of accounts) {
+        if (account.enabled !== false && account.appId && account.clientSecret) {
+          await this.connect(account)
+        }
       }
     }
 
@@ -80,14 +82,12 @@ Bot.tasker.push(
       Bot.express.quiet.push(`/${this.name}`)
     }
 
-    async connect(tokenStr) {
-      const token = tokenStr.split(":")
-      const id = token[0]
+    async connect(account) {
+      const id = account.name || account.appId
       const opts = {
         ...this.config.bot,
-        appid: token[1],
-        token: token[2],
-        secret: token[3],
+        appid: account.appId,
+        secret: account.clientSecret,
         intents: [
           "GUILDS",
           "GUILD_MEMBERS",
@@ -95,18 +95,13 @@ Bot.tasker.push(
           "DIRECT_MESSAGE",
           "INTERACTION",
           "MESSAGE_AUDIT",
+          "GROUP_AT_MESSAGE_CREATE",
+          "C2C_MESSAGE_CREATE",
+          "PUBLIC_GUILD_MESSAGES",
         ],
       }
 
-      if (Number(token[4])) {
-        opts.intents.push("GROUP_AT_MESSAGE_CREATE", "C2C_MESSAGE_CREATE")
-      }
-
-      if (Number(token[5])) {
-        opts.intents.push("GUILD_MESSAGES")
-      } else {
-        opts.intents.push("PUBLIC_GUILD_MESSAGES")
-      }
+      Bot.makeLog('info', `正在连接 QQBot: ${id}, AppID: ${account.appId}`, 'QQBot')
 
       const sdk = new QQBotSDK(opts)
 
@@ -157,17 +152,15 @@ Bot.tasker.push(
         }
       }
 
-      try {
-        if (token[4] === "2") {
-          await Bot[id].sdk.sessionManager.getAccessToken()
-          Bot[id].login = () => this.appid[opts.appid] = Bot[id]
-          Bot[id].logout = () => delete this.appid[opts.appid]
-        }
+      Bot[id].sdk.sessionManager.on("DEAD", (data) => {
+        Bot.makeLog('error', `QQBot 连接死亡: ${data.msg}`, id)
+      })
 
+      try {
         await Bot[id].login()
         Object.assign(Bot[id].info, await Bot[id].sdk.getSelfInfo())
       } catch (err) {
-        Bot.makeLog('error', `${this.name}(${this.id}) ${this.version} 连接失败`, id, err)
+        Bot.makeLog('error', `${this.name}(${this.id}) ${this.version} 连接失败: ${err.message}`, id, err)
         return false
       }
 
@@ -258,9 +251,18 @@ Bot.tasker.push(
       const buffer = await Bot.Buffer(file)
       const image = await this.makeBotImage(buffer) || { url: await Bot.fileToUrl(file) }
 
-      // image-size 模块在当前运行环境中兼容性有问题，宽高信息不是关键功能，直接忽略尺寸获取
+      if (!image.width || !image.height) {
+        try {
+          const size = imageSize(buffer)
+          image.width = size.width
+          image.height = size.height
+        } catch (err) {
+          Bot.makeLog('error', '图片分辨率检测错误', data.self_id, err)
+        }
+      }
+
       return {
-        des: `![${summary}]`,
+        des: `![${summary} #${image.width || 0}px #${image.height || 0}px]`,
         url: `(${image.url})`,
       }
     }
@@ -618,20 +620,9 @@ Bot.tasker.push(
       return messages
     }
 
-    // 将 base64:// 开头的图片字符串转换为 Buffer，方便 SDK 正确上传
-    normalizeImageFile(file) {
-      if (typeof file === "string" && file.startsWith("base64://")) {
-        try {
-          return Buffer.from(file.replace(/^base64:\/\//, ""), "base64")
-        } catch {
-          return file
-        }
-      }
-      return file
-    }
-
     async makeMsg(data, msg) {
       const messages = []
+      const button = []
       let message = []
       let reply
 
@@ -658,7 +649,6 @@ Bot.tasker.push(
               messages.push(message)
               message = []
             }
-            if (i.file) i.file = this.normalizeImageFile(i.file)
             if (this.sharp && i.file) i.file = await this.compressImage(data, i.file)
             break
           case "file":
@@ -708,6 +698,10 @@ Bot.tasker.push(
       }
 
       if (message.length) messages.push(message)
+
+      while (button.length) {
+        messages.push([{ type: "keyboard", content: { rows: button.splice(0, 5) } }])
+      }
 
       if (reply) for (const i of messages) i.unshift(reply)
       return messages
@@ -786,7 +780,6 @@ Bot.tasker.push(
           case "embed":
             break
           case "image":
-            if (i.file) i.file = this.normalizeImageFile(i.file)
             message.push(i)
             messages.push(message)
             message = []
@@ -860,7 +853,7 @@ Bot.tasker.push(
       return rets
     }
 
-    async sendDirectMsg(data, msg, event) {
+    async sendDirectMsg(data, msg) {
       if (!data.guild_id) {
         if (!data.src_guild_id) {
           Bot.makeLog('error', `发送频道私聊消息失败：[${data.user_id}] 不存在来源频道信息`, data.self_id)
@@ -871,19 +864,11 @@ Bot.tasker.push(
         data.channel_id = dms.channel_id
         data.bot.fl.set(`qg_${data.user_id}`, { ...data.bot.fl.get(`qg_${data.user_id}`), ...dms })
       }
-      return this.sendGMsg(
-        data,
-        m => data.bot.sdk.sendDirectMessage(data.guild_id, m, event),
-        msg,
-      )
+      return this.sendGMsg(data, msg => data.bot.sdk.sendDirectMessage(data.guild_id, msg), msg)
     }
 
-    sendGuildMsg(data, msg, event) {
-      return this.sendGMsg(
-        data,
-        m => data.bot.sdk.sendGuildMessage(data.channel_id, m, event),
-        msg,
-      )
+    sendGuildMsg(data, msg) {
+      return this.sendGMsg(data, msg => data.bot.sdk.sendGuildMessage(data.channel_id, msg), msg)
     }
 
     async recallMsg(data, recall, message_id) {
@@ -1027,12 +1012,11 @@ Bot.tasker.push(
     async makeFriendMessage(data, event) {
       data.sender = { user_id: `${data.self_id}${this.sep}${event.sender.user_id}` }
       Bot.makeLog('info', `好友消息：[${data.user_id}] ${data.raw_message}`, data.self_id)
-      // 将原始 SDK 事件传入，确保 QQ 识别为“对该消息的回复”
-      data.reply = msg => this.sendFriendMsg(
-        { ...data, user_id: event.sender.user_id },
-        msg,
-        event,
-      )
+      Bot.makeLog('debug', `makeFriendMessage: event.sender=${Bot.String(event.sender)}`, data.self_id)
+      data.reply = msg => {
+        Bot.makeLog('info', `reply called: user_id=${event.sender.user_id}`, data.self_id)
+        return this.sendFriendMsg({ ...data, user_id: event.sender.user_id }, msg, { id: data.message_id })
+      }
       await this.setFriendMap(data)
     }
 
@@ -1040,12 +1024,7 @@ Bot.tasker.push(
       data.sender = { user_id: `${data.self_id}${this.sep}${event.sender.user_id}` }
       data.group_id = `${data.self_id}${this.sep}${event.group_id}`
       Bot.makeLog('info', `群消息：[${data.group_id}, ${data.user_id}] ${data.raw_message}`, data.self_id)
-      // 这里同样把原始事件传给 sendGroupMsg
-      data.reply = msg => this.sendGroupMsg(
-        { ...data, group_id: event.group_id },
-        msg,
-        event,
-      )
+      data.reply = msg => this.sendGroupMsg({ ...data, group_id: event.group_id }, msg, { id: data.message_id })
       data.message.unshift({ type: "at", qq: data.self_id })
       await this.setGroupMap(data)
     }
@@ -1326,4 +1305,4 @@ Bot.tasker.push(
       req.res.sendStatus(200)
     }
   })()
-);
+)

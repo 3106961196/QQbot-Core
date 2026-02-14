@@ -10,55 +10,55 @@ export default class QQBotConfig extends ConfigBase {
       fileType: 'json',
       schema: {
         fields: {
-          toQRCode: {
-            type: 'boolean',
-            label: 'URL转二维码',
-            description: '将URL转换为二维码图片',
-            default: true,
-            component: 'Switch'
+          tips: {
+            type: 'string',
+            label: '提示信息',
+            description: '配置提示信息',
+            default: 'QQBot 官方机器人配置',
+            component: 'Input'
           },
-          toCallback: {
-            type: 'boolean',
-            label: '按钮回调',
-            description: '启用按钮点击回调功能',
-            default: true,
-            component: 'Switch'
-          },
-          toBotUpload: {
-            type: 'boolean',
-            label: 'Bot上传资源',
-            description: '使用Bot上传图片/语音资源',
-            default: true,
-            component: 'Switch'
-          },
-          hideGuildRecall: {
-            type: 'boolean',
-            label: '隐藏频道撤回',
-            description: '撤回频道消息时是否隐藏',
-            default: false,
-            component: 'Switch'
-          },
-          imageLength: {
-            type: 'number',
-            label: '图片压缩阈值',
-            description: '图片压缩阈值(MB)，超过此大小进行压缩',
-            min: 0,
-            max: 50,
-            // 默认关闭图片压缩，避免在未安装 sharp 时产生无意义的警告
-            default: 0,
-            component: 'InputNumber'
-          },
-          markdown: {
-            type: 'object',
-            label: 'Markdown配置',
-            component: 'SubForm',
+          accounts: {
+            type: 'array',
+            label: '机器人账户列表',
+            description: 'QQBot机器人账户配置',
+            itemType: 'object',
+            default: [],
+            component: 'JsonEditor',
             fields: {
-              template: {
+              name: {
                 type: 'string',
-                label: '模板ID序列',
-                description: 'Markdown模板ID占位符序列',
-                default: 'abcdefghij',
+                label: '账户名称',
+                description: '账户标识名称',
+                default: 'default',
                 component: 'Input'
+              },
+              appId: {
+                type: 'string',
+                label: 'AppID',
+                description: 'QQ开放平台应用的AppID',
+                default: '',
+                component: 'Input'
+              },
+              clientSecret: {
+                type: 'string',
+                label: 'ClientSecret',
+                description: 'QQ开放平台应用的ClientSecret',
+                default: '',
+                component: 'Password'
+              },
+              enabled: {
+                type: 'boolean',
+                label: '启用状态',
+                description: '是否启用此账户',
+                default: true,
+                component: 'Switch'
+              },
+              markdownSupport: {
+                type: 'boolean',
+                label: 'Markdown支持',
+                description: '是否启用Markdown消息格式',
+                default: false,
+                component: 'Switch'
               }
             }
           },
@@ -92,43 +92,95 @@ export default class QQBotConfig extends ConfigBase {
               }
             }
           },
-          token: {
-            type: 'array',
-            label: '机器人Token列表',
-            description: 'QQBot机器人Token配置列表，格式：id:appid:token:secret:群消息:频道消息',
-            itemType: 'string',
-            default: [],
-            component: 'Tags'
+          toQRCode: {
+            type: 'boolean',
+            label: 'URL转二维码',
+            description: '将URL转换为二维码图片',
+            default: true,
+            component: 'Switch'
+          },
+          toCallback: {
+            type: 'boolean',
+            label: '按钮回调模式',
+            description: '启用按钮点击回调功能',
+            default: true,
+            component: 'Switch'
+          },
+          toBotUpload: {
+            type: 'boolean',
+            label: 'Bot上传资源',
+            description: '使用Bot上传图片和语音资源',
+            default: true,
+            component: 'Switch'
+          },
+          hideGuildRecall: {
+            type: 'boolean',
+            label: '隐藏频道撤回',
+            description: '撤回频道消息时是否隐藏',
+            default: false,
+            component: 'Switch'
+          },
+          imageLength: {
+            type: 'number',
+            label: '图片压缩阈值',
+            description: '图片压缩阈值(MB)',
+            min: 0,
+            max: 50,
+            default: 3,
+            component: 'InputNumber'
+          },
+          markdown: {
+            type: 'object',
+            label: 'Markdown配置',
+            description: 'Markdown消息模板配置',
+            component: 'SubForm',
+            default: {},
+            fields: {
+              template: {
+                type: 'array',
+                label: '模板参数名',
+                description: 'Markdown模板参数名数组',
+                itemType: 'string',
+                default: ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'],
+                component: 'JsonEditor'
+              }
+            }
           }
         }
       }
     });
   }
 
-  async addToken(token) {
+  async getAccount(accountName = 'default') {
     const data = await this.read();
-    if (!data.token) data.token = [];
-    if (!data.token.includes(token)) {
-      data.token.push(token);
-      await this.write(data);
-    }
-    return data.token;
+    const accounts = data.accounts || [];
+    return accounts.find(a => a.name === accountName);
   }
 
-  async removeToken(token) {
+  async addAccount(account) {
     const data = await this.read();
-    if (data.token) {
-      data.token = data.token.filter(t => t !== token);
-      await this.write(data);
+    if (!data.accounts) data.accounts = [];
+    const existingIndex = data.accounts.findIndex(a => a.name === account.name);
+    if (existingIndex >= 0) {
+      data.accounts[existingIndex] = account;
+    } else {
+      data.accounts.push(account);
     }
-    return data.token;
-  }
-
-  async setMarkdownTemplate(botId, templateId) {
-    const data = await this.read();
-    if (!data.markdown) data.markdown = { template: 'abcdefghij' };
-    data.markdown[botId] = templateId;
     await this.write(data);
-    return data.markdown;
+    return data.accounts;
+  }
+
+  async removeAccount(accountName) {
+    const data = await this.read();
+    if (data.accounts) {
+      data.accounts = data.accounts.filter(a => a.name !== accountName);
+      await this.write(data);
+    }
+    return data.accounts;
+  }
+
+  async listAccounts() {
+    const data = await this.read();
+    return data.accounts || [];
   }
 }

@@ -16,6 +16,8 @@ export default class QQBotEvent extends EventListenerBase {
   async execute(e) {
     if (!e) return false
 
+    Bot.makeLog('debug', `QQBotEvent.execute: post_type=${e.post_type}, message_type=${e.message_type}, reply=${typeof e.reply}`, e.self_id)
+
     this.ensureEventId(e)
     if (!this.markProcessed(e)) return false
 
@@ -23,15 +25,24 @@ export default class QQBotEvent extends EventListenerBase {
 
     if (!this.normalizeEvent(e)) return false
 
+    Bot.makeLog('debug', `QQBotEvent: 处理事件, reply=${typeof e.reply}, user_id=${e.user_id}`, e.self_id)
+
     return await this.plugins.deal(e)
   }
 
   normalizeEvent(e) {
-    // 部分事件对象是只读的，直接写 e.bot 会报错，这里改为使用局部变量
     const bot = e.bot || (e.self_id ? Bot[e.self_id] : null)
     if (!bot) {
       Bot.makeLog('warn', `Bot对象不存在，忽略事件：${e.self_id}`, 'QQBotEvent')
       return false
+    }
+
+    try {
+      if (!e.bot) {
+        Object.defineProperty(e, 'bot', { value: bot, writable: true, configurable: true })
+      }
+    } catch {
+      // 属性已存在，忽略
     }
 
     if (!e.raw_message && Array.isArray(e.message) && e.message.length > 0) {
@@ -53,13 +64,8 @@ export default class QQBotEvent extends EventListenerBase {
       e.msg = e.raw_message
     }
 
-    if (!e.self_id && bot && bot.uin) {
+    if (!e.self_id && bot.uin) {
       e.self_id = bot.uin
-    }
-
-    if (e.post_type === 'connect') {
-      Bot.makeLog('mark', `QQBot ${e.self_id} 已连接`, 'QQBotEvent')
-      return false
     }
 
     return true

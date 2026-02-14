@@ -19,7 +19,6 @@ QQBot-Core 是一个用于连接 QQ 官方机器人的核心适配器模块，�
 在 `XRK-AGT/core/` 目录下克隆项目：
 
 ```bash
-cd XRK-AGT/core/
 git clone https://github.com/3106961196/QQbot-Core.git
 ```
 

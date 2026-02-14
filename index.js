@@ -1,14 +1,49 @@
 import QQBotConfig from './commonconfig/qqbot.js';
 
-// 优先确保 QQBot 配置文件存在（按 schema 默认值生成）
-try {
-  const cfgg = new QQBotConfig();
-  if (!await cfgg.exists()) {
-    await cfgg.write(cfgg.getDefaultFromSchema(), { backup: false, validate: true });
-    Bot.makeLog('info', '已生成 QQBot 默认配置文件: data/QQBot.json', 'QQbot-Core');
-  }
-} catch (err) {
-  Bot.makeLog('error', `初始化 QQBot 配置失败: ${err.message}`, 'QQbot-Core', err);
-}
-
 Bot.makeLog('info', '正在加载 QQBot 适配器 Core', 'QQbot-Core');
+
+(async () => {
+  try {
+    const config = new QQBotConfig();
+
+    if (!await config.exists()) {
+      const defaultData = {
+        tips: "QQBot 官方机器人配置",
+        accounts: [],
+        bot: {
+          sandbox: false,
+          maxRetry: 10,
+          timeout: 30000
+        },
+        toQRCode: true,
+        toCallback: true,
+        toBotUpload: true,
+        hideGuildRecall: false,
+        imageLength: 3,
+        markdown: {
+          template: ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j']
+        }
+      };
+
+      await config.write(defaultData, { backup: false, validate: false });
+
+      Bot.makeLog(
+        'info',
+        `已自动创建 QQBot 配置文件: ${config.getFilePath()}`,
+        'QQbot-Core'
+      );
+      Bot.makeLog(
+        'info',
+        `请编辑配置文件添加机器人账号: appId 和 clientSecret`,
+        'QQbot-Core'
+      );
+    }
+  } catch (error) {
+    Bot.makeLog(
+      'error',
+      `QQBot 配置初始化失败: ${error.message}`,
+      'QQbot-Core',
+      error
+    );
+  }
+})();

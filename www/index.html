@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QQBot 管理</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app">
+        <header class="header">
+            <div class="header-brand">
+                <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/>
+                    <path d="M8 14s1.5 2 4 2 4-2 4-2"/>
+                    <line x1="9" y1="9" x2="9.01" y2="9"/>
+                    <line x1="15" y1="9" x2="15.01" y2="9"/>
+                </svg>
+                <span class="brand-name">QQBot 管理</span>
+            </div>
+            <div class="header-actions">
+                <div class="api-key-box">
+                    <input type="password" class="api-key-input" id="apiKey" placeholder="API Key">
+                    <button class="btn btn-sm btn-primary" id="saveApiKeyBtn">保存</button>
+                </div>
+                <div class="header-status" id="connectionStatus">
+                    <span class="status-dot"></span>
+                    <span class="status-text">未连接</span>
+                </div>
+            </div>
+        </header>
+
+        <main class="main">
+            <div class="bot-list" id="botList">
+                <div class="empty-state" id="emptyState">
+                    <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/>
+                        <path d="M8 14s1.5 2 4 2 4-2 4-2"/>
+                        <line x1="9" y1="9" x2="9.01" y2="9"/>
+                        <line x1="15" y1="9" x2="15.01" y2="9"/>
+                    </svg>
+                    <p class="empty-text">暂无机器人</p>
+                    <p class="empty-hint">点击右下角按钮添加 QQ 官方机器人</p>
+                </div>
+            </div>
+        </main>
+
+        <button class="fab" id="fabAdd" title="添加机器人">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"/>
+                <line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+        </button>
+    </div>
+
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="modal" id="addModal">
+            <div class="modal-header">
+                <h2 class="modal-title">添加 QQ 机器人</h2>
+                <button class="modal-close" id="modalClose">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label" for="appId">AppID</label>
+                    <input type="text" class="form-input" id="appId" placeholder="请输入 QQ 开放平台 AppID">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="appSecret">AppSecret</label>
+                    <input type="password" class="form-input" id="appSecret" placeholder="请输入 QQ 开放平台 AppSecret">
+                </div>
+                <div class="form-hint">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <line x1="12" y1="16" x2="12" y2="12"/>
+                        <line x1="12" y1="8" x2="12.01" y2="8"/>
+                    </svg>
+                    <span>请在 QQ 开放平台创建机器人应用获取 AppID 和 AppSecret</span>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="btnCancel">取消</button>
+                <button class="btn btn-primary" id="btnSubmit">
+                    <span class="btn-text">添加并连接</span>
+                    <span class="btn-loading" style="display: none;">
+                        <svg class="spinner" viewBox="0 0 24 24">
+                            <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" fill="none" stroke-dasharray="31.416" stroke-dashoffset="10"/>
+                        </svg>
+                        连接中...
+                    </span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>

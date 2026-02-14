@@ -17,8 +17,7 @@
     "qrcode": "^1.5.4",
     "image-size": "^2.0.0",
     "url-regex-safe": "^4.0.0",
-    "silk-wasm": "^3.6.3",
-    "tweetnacl": "^1.0.3"
+    "silk-wasm": "^3.7.1"
   },
   "peerDependencies": {
     "sharp": ">=0.32.0"
