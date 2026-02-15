@@ -14,7 +14,7 @@ class QQBotManager {
             this.loadBots();
         } catch (error) {
             console.error('初始化失败:', error);
-            alert('页面初始化失败: ' + error.message);
+            this.toast('页面初始化失败: ' + error.message, 'error');
         }
     }
 
@@ -38,7 +38,7 @@ class QQBotManager {
             }
         } catch (error) {
             console.error('保存API Key失败:', error);
-            alert('保存失败: ' + error.message);
+            this.toast('保存失败: ' + error.message, 'error');
         }
     }
 
@@ -124,6 +124,13 @@ class QQBotManager {
             });
         });
 
+        this.botList.querySelectorAll('.btn-reconnect').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const appId = e.currentTarget.dataset.appId;
+                this.reconnectBot(appId);
+            });
+        });
+
         this.botList.querySelectorAll('.btn-delete').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const appId = e.currentTarget.dataset.appId;
@@ -134,11 +141,28 @@ class QQBotManager {
 
     createBotCard(bot) {
         const initial = bot.nickname ? bot.nickname.charAt(0).toUpperCase() : bot.id.charAt(0);
-        const statusClass = bot.status === 'online' ? 'online' : 'offline';
-        const statusText = bot.status === 'online' ? '在线' : '离线';
+        const isOnline = bot.status === 'online';
+        const statusClass = isOnline ? 'online' : 'offline';
+        const statusText = isOnline ? '在线' : '离线';
+        
+        const actionButton = isOnline 
+            ? `<button class="btn btn-secondary btn-sm btn-disconnect" data-id="${bot.id}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18.36 6.64a9 9 0 1 1-12.73 0"/>
+                    <line x1="12" y1="2" x2="12" y2="12"/>
+                </svg>
+                断开
+               </button>`
+            : `<button class="btn btn-success btn-sm btn-reconnect" data-app-id="${bot.appId}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M23 4v6h-6"/>
+                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                </svg>
+                重连
+               </button>`;
         
         return `
-            <div class="bot-card" data-id="${bot.id}">
+            <div class="bot-card ${isOnline ? '' : 'offline'}" data-id="${bot.id}" data-app-id="${bot.appId}">
                 <div class="bot-card-header">
                     <div class="bot-info">
                         <div class="bot-avatar">${initial}</div>
@@ -155,22 +179,16 @@ class QQBotManager {
                 <div class="bot-card-body">
                     <div class="bot-detail">
                         <span class="bot-detail-label">启动时间</span>
-                        <span class="bot-detail-value">${this.formatTime(bot.startTime)}</span>
+                        <span class="bot-detail-value">${isOnline ? this.formatTime(bot.startTime) : '-'}</span>
                     </div>
                     <div class="bot-detail">
-                        <span class="bot-detail-label">版本</span>
-                        <span class="bot-detail-value">${bot.version || '-'}</span>
+                        <span class="bot-detail-label">AppID</span>
+                        <span class="bot-detail-value">${bot.appId || '-'}</span>
                     </div>
                 </div>
                 <div class="bot-card-actions">
-                    <button class="btn btn-secondary btn-sm btn-disconnect" data-id="${bot.id}">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M18.36 6.64a9 9 0 1 1-12.73 0"/>
-                            <line x1="12" y1="2" x2="12" y2="12"/>
-                        </svg>
-                        断开
-                    </button>
-                    <button class="btn btn-danger btn-sm btn-delete" data-app-id="${bot.id}">
+                    ${actionButton}
+                    <button class="btn btn-danger btn-sm btn-delete" data-app-id="${bot.appId}">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <polyline points="3,6 5,6 21,6"/>
                             <path d="M19,6v14a2,2,0,0,1-2,2H7a2,2,0,0,1-2-2V6m3,0V4a2,2,0,0,1,2-2h4a2,2,0,0,1,2,2v2"/>
@@ -202,7 +220,7 @@ class QQBotManager {
     showModal() {
         this.modalOverlay.classList.add('show');
         this.appIdInput.value = '';
-        this.appSecretInput.value = '';
+        if (this.appSecretInput) this.appSecretInput.value = '';
         this.appIdInput.focus();
     }
 
@@ -229,7 +247,7 @@ class QQBotManager {
 
     async handleSubmit() {
         const appId = this.appIdInput.value.trim();
-        const appSecret = this.appSecretInput.value.trim();
+        const appSecret = this.appSecretInput ? this.appSecretInput.value.trim() : '';
 
         if (!appId || !appSecret) {
             this.toast('请填写 AppID 和 AppSecret', 'warning');
@@ -288,6 +306,23 @@ class QQBotManager {
         }
     }
 
+    async reconnectBot(appId) {
+        try {
+            this.toast('正在重连...', 'info');
+            const response = await this.fetch(`/api/qqbot/reconnect/${appId}`, {
+                method: 'POST'
+            });
+            if (response.success) {
+                this.toast('重连成功', 'success');
+                await this.loadBots();
+            } else {
+                this.toast('重连失败: ' + (response.message || '未知错误'), 'error');
+            }
+        } catch (error) {
+            this.toast('重连失败: ' + error.message, 'error');
+        }
+    }
+
     async deleteBot(appId) {
         if (!confirm('确定要删除这个机器人吗？')) {
             return;
@@ -317,10 +352,24 @@ class QQBotManager {
         if (apiKey) {
             headers['Authorization'] = `Bearer ${apiKey}`;
         }
+        
         const response = await fetch(API_BASE + url, {
             ...options,
             headers
         });
+        
+        if (!response.ok) {
+            const errorText = await response.text().catch(() => 'Unknown error');
+            let errorMessage = `HTTP ${response.status}`;
+            try {
+                const errorJson = JSON.parse(errorText);
+                errorMessage = errorJson.message || errorJson.error || errorMessage;
+            } catch {
+                if (errorText) errorMessage = errorText;
+            }
+            throw new Error(errorMessage);
+        }
+        
         return response.json();
     }
 

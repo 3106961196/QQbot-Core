@@ -147,13 +147,25 @@ Bot.tasker.push(
       Bot[id].sdk.logger = {}
       for (const i of ["trace", "debug", "info", "mark", "warn", "error", "fatal"]) {
         Bot[id].sdk.logger[i] = (...args) => {
-          if (args[0]?.startsWith?.("recv from")) return
+          const msg = args.join(' ')
+          if (msg?.startsWith?.("recv from")) return
+          if (msg?.includes?.("1005")) {
+            Bot.makeLog('debug', `连接被关闭`, id)
+            return
+          }
           return Bot.makeLog(i, args, id)
         }
       }
 
       Bot[id].sdk.sessionManager.on("DEAD", (data) => {
-        Bot.makeLog('error', `QQBot 连接死亡: ${data.msg}`, id)
+        const errorMsg = data.msg || '连接断开'
+        Bot.makeLog('warn', `QQBot 连接断开: ${errorMsg}`, id)
+        this.bots.delete(id)
+        if (Bot[id]) {
+          delete Bot[id]
+          Bot.uin = Bot.uin.filter(u => u !== id)
+        }
+        Bot.em(`disconnect.${id}`, { self_id: id, reason: errorMsg })
       })
 
       try {
@@ -178,11 +190,17 @@ Bot.tasker.push(
     async disconnect(id) {
       const bot = this.bots.get(id)
       if (bot) {
-        await bot.logout()
+        try {
+          await bot.logout()
+        } catch (err) {
+          Bot.makeLog('debug', `断开连接时发生错误: ${err.message}`, id)
+        }
         this.bots.delete(id)
         delete Bot[id]
         Bot.uin = Bot.uin.filter(u => u !== id)
-        Bot.makeLog('mark', `QQBot ${id} 已断开`, 'QQBot')
+        Bot.makeLog('mark', `QQBot ${bot.nickname || id} 已断开`, id)
+      } else {
+        Bot.makeLog('debug', `QQBot ${id} 未在线，无需断开`, 'QQBot')
       }
     }
 

@@ -3,15 +3,15 @@ import { HttpResponse } from '../../../src/utils/http-utils.js';
 import ConfigLoader from '../../../src/infrastructure/commonconfig/loader.js';
 import { Bot as QQBotSDK } from 'qq-group-bot';
 
+const CONNECT_TEST_TIMEOUT = 15000
+
 const ensureAuthorized = (req, res, Bot) => {
   if (Bot.checkApiAuthorization?.(req)) return true;
   HttpResponse.forbidden(res, 'Unauthorized');
   return false;
 };
 
-const getConfigInstance = () => {
-  return ConfigLoader.get('qqbot');
-};
+const getConfigInstance = () => ConfigLoader.get('qqbot');
 
 const getTasker = (Bot) => {
   return Bot.tasker.find(t => t.id === 'QQBot');
@@ -30,18 +30,27 @@ export default {
         if (!ensureAuthorized(req, res, Bot)) return;
 
         const tasker = getTasker(Bot);
+        const config = getConfigInstance();
+
         if (!tasker) {
           return HttpResponse.notFound(res, 'QQBot Tasker 未加载');
         }
 
+        const accounts = config ? (await config.listAccounts()) : [];
         const bots = [];
-        for (const [id, bot] of tasker.bots) {
+
+        for (const account of accounts) {
+          const botId = account.name || account.appId;
+          const onlineBot = tasker.bots.get(botId);
+          
           bots.push({
-            id,
-            nickname: bot.nickname,
-            avatar: bot.avatar,
-            status: 'online',
-            startTime: bot.stat?.start_time,
+            id: botId,
+            appId: account.appId,
+            nickname: onlineBot?.nickname || account.name || account.appId,
+            avatar: onlineBot?.avatar || `https://q.qlogo.cn/g?b=qq&s=0&nk=${botId}`,
+            status: onlineBot ? 'online' : 'offline',
+            enabled: account.enabled !== false,
+            startTime: onlineBot?.stat?.start_time,
           });
         }
 
@@ -50,6 +59,7 @@ export default {
           version: tasker.version,
           bots,
           botCount: bots.length,
+          onlineCount: bots.filter(b => b.status === 'online').length,
         });
       }, 'qqbot.status')
     },
@@ -128,7 +138,7 @@ export default {
             const timeout = setTimeout(() => {
               testBot.stop();
               reject(new Error('连接超时'));
-            }, 15000);
+            }, CONNECT_TEST_TIMEOUT);
 
             testBot.sessionManager.once('READY', () => {
               clearTimeout(timeout);
@@ -168,29 +178,19 @@ export default {
           return HttpResponse.validationError(res, '缺少appId或clientSecret');
         }
 
-        const data = await config.read();
-        if (!data.accounts) data.accounts = [];
-        
-        const existingIndex = data.accounts.findIndex(a => a.appId === appId);
         const account = { name: name || appId, appId, clientSecret, enabled, markdownSupport };
-        
-        if (existingIndex >= 0) {
-          data.accounts[existingIndex] = account;
-        } else {
-          data.accounts.push(account);
-        }
-        
-        await config.write(data);
+        const accounts = await config.addAccount(account);
 
         const tasker = getTasker(Bot);
         if (tasker && enabled !== false) {
-          if (existingIndex >= 0) {
-            await tasker.disconnect(appId);
+          const botId = account.name || appId;
+          if (tasker.bots.has(botId)) {
+            await tasker.disconnect(botId);
           }
           await tasker.connect(account);
         }
 
-        HttpResponse.success(res, { accounts: data.accounts }, '账号已保存并连接');
+        HttpResponse.success(res, { accounts }, '账号已保存并连接');
       }, 'qqbot.accounts.add')
     },
 
@@ -206,21 +206,22 @@ export default {
         }
 
         const { appId } = req.params;
-        const data = await config.read();
+        const accounts = await config.listAccounts();
+        const account = accounts.find(a => a.appId === appId || a.name === appId);
         
-        if (!data.accounts || !data.accounts.find(a => a.appId === appId)) {
+        if (!account) {
           return HttpResponse.notFound(res, `账号 ${appId} 不存在`);
         }
 
-        data.accounts = data.accounts.filter(a => a.appId !== appId);
-        await config.write(data);
-
         const tasker = getTasker(Bot);
         if (tasker) {
-          await tasker.disconnect(appId);
+          const botId = account.name || account.appId;
+          await tasker.disconnect(botId);
         }
 
-        HttpResponse.success(res, { accounts: data.accounts }, '账号已删除');
+        await config.removeAccount(account.appId);
+
+        HttpResponse.success(res, { accounts: await config.listAccounts() }, '账号已删除');
       }, 'qqbot.accounts.remove')
     },
 
@@ -236,9 +237,61 @@ export default {
         }
 
         const { appId } = req.params;
-        await tasker.disconnect(appId);
+        
+        let botId = appId;
+        const config = getConfigInstance();
+        if (config) {
+          const accounts = await config.listAccounts();
+          const account = accounts.find(a => a.appId === appId || a.name === appId);
+          if (account) {
+            botId = account.name || account.appId;
+          }
+        }
+        
+        await tasker.disconnect(botId);
         HttpResponse.success(res, null, '已断开连接');
       }, 'qqbot.disconnect')
+    },
+
+    {
+      method: 'POST',
+      path: '/api/qqbot/reconnect/:appId',
+      handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
+        if (!ensureAuthorized(req, res, Bot)) return;
+
+        const tasker = getTasker(Bot);
+        const config = getConfigInstance();
+        
+        if (!tasker) {
+          return HttpResponse.notFound(res, 'QQBot Tasker 未加载');
+        }
+        
+        if (!config) {
+          return HttpResponse.notFound(res, 'QQBot配置实例未找到');
+        }
+
+        const { appId } = req.params;
+        const accounts = await config.listAccounts();
+        const account = accounts.find(a => a.appId === appId || a.name === appId);
+        
+        if (!account) {
+          return HttpResponse.notFound(res, `账号 ${appId} 不存在`);
+        }
+
+        const botId = account.name || account.appId;
+        
+        if (tasker.bots.has(botId)) {
+          await tasker.disconnect(botId);
+        }
+        
+        const success = await tasker.connect(account);
+        
+        if (success) {
+          HttpResponse.success(res, null, '重连成功');
+        } else {
+          HttpResponse.error(res, new Error('重连失败'), 400, 'qqbot.reconnect');
+        }
+      }, 'qqbot.reconnect')
     },
 
     {

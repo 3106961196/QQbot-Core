@@ -165,6 +165,19 @@ body {
     border-color: var(--primary);
 }
 
+.bot-card.offline {
+    opacity: 0.7;
+}
+
+.bot-card.offline .bot-avatar {
+    background: linear-gradient(135deg, var(--text-muted), var(--text-secondary));
+}
+
+.bot-card.offline:hover {
+    opacity: 1;
+    border-color: var(--text-muted);
+}
+
 .bot-card-header {
     display: flex;
     align-items: center;
@@ -311,6 +324,16 @@ body {
 
 .btn-danger:hover {
     background: var(--danger);
+    color: white;
+}
+
+.btn-success {
+    background: var(--success-light);
+    color: var(--success);
+}
+
+.btn-success:hover {
+    background: var(--success);
     color: white;
 }
 
