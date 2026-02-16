@@ -1,6 +1,6 @@
 # QQBot-Core
 
-QQ官方机器人适配器，基于 XRK-AGT 框架制作。
+QQ官方机器人适配器，基于 [XRK-AGT](https://github.com/sunflowermm/XRK-AGT) 框架制作。
 
 ## 项目简介
 
