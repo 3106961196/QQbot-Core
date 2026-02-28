@@ -82,8 +82,50 @@ export default {
           enabled: a.enabled !== false,
           markdownSupport: a.markdownSupport,
         }));
-        HttpResponse.success(res, { accounts, bot: data.bot, toQRCode: data.toQRCode });
+        HttpResponse.success(res, { 
+          accounts, 
+          bot: data.bot,
+          toQRCode: data.toQRCode,
+          toCallback: data.toCallback,
+          toBotUpload: data.toBotUpload,
+          hideGuildRecall: data.hideGuildRecall,
+          imageLength: data.imageLength,
+          defaultMarkdownSupport: data.defaultMarkdownSupport,
+        });
       }, 'qqbot.config.read')
+    },
+
+    {
+      method: 'PUT',
+      path: '/api/qqbot/config',
+      handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
+        if (!ensureAuthorized(req, res, Bot)) return;
+
+        const config = getConfigInstance();
+        if (!config) {
+          return HttpResponse.notFound(res, 'QQBot配置实例未找到');
+        }
+
+        const data = await config.read();
+        const body = req.body || {};
+
+        if (body.toQRCode !== undefined) data.toQRCode = body.toQRCode;
+        if (body.toCallback !== undefined) data.toCallback = body.toCallback;
+        if (body.toBotUpload !== undefined) data.toBotUpload = body.toBotUpload;
+        if (body.hideGuildRecall !== undefined) data.hideGuildRecall = body.hideGuildRecall;
+        if (body.imageLength !== undefined) data.imageLength = body.imageLength;
+        if (body.defaultMarkdownSupport !== undefined) data.defaultMarkdownSupport = body.defaultMarkdownSupport;
+        
+        if (body.bot) {
+          data.bot = data.bot || {};
+          if (body.bot.sandbox !== undefined) data.bot.sandbox = body.bot.sandbox;
+          if (body.bot.maxRetry !== undefined) data.bot.maxRetry = body.bot.maxRetry;
+          if (body.bot.timeout !== undefined) data.bot.timeout = body.bot.timeout;
+        }
+
+        await config.write(data);
+        HttpResponse.success(res, null, '配置已保存');
+      }, 'qqbot.config.update')
     },
 
     {

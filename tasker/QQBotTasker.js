@@ -36,12 +36,22 @@ Bot.tasker.push(
         await this.loadConfig()
         this.setupQRCodeRegex()
         await this.loadSharp()
+        this.printWebUrl()
         await this.setupBots()
         this.setupWebHook()
         Bot.makeLog('mark', `${this.name}(${this.id}) ${this.version} 加载完成`, 'QQBot')
       } catch (err) {
         Bot.makeLog('error', `QQBot加载失败: ${err.message}`, 'QQBot', err)
       }
+    }
+
+    printWebUrl() {
+      const port = Bot.actualPort || Bot.httpPort || 8080
+      const host = Bot.url || '127.0.0.1'
+      const displayHost = host.replace(/^https?:\/\//, '').replace(/:\d+.*$/, '')
+      const displayPort = (port === 80 || port === 443) ? '' : `:${port}`
+      const protocol = port === Bot.actualHttpsPort ? 'https' : 'http'
+      Bot.makeLog('mark', `QQBot 管理界面: ${protocol}://${displayHost}${displayPort}/core/QQbot-Core/`, 'QQBot')
     }
 
     setupQRCodeRegex() {
@@ -82,8 +92,19 @@ Bot.tasker.push(
       Bot.express.quiet.push(`/${this.name}`)
     }
 
+    async checkNetwork() {
+      const dns = await import('node:dns').then(m => m.promises)
+      try {
+        await dns.resolve('bots.qq.com')
+        return true
+      } catch (err) {
+        return false
+      }
+    }
+
     async connect(account) {
       const id = account.name || account.appId
+      const timeout = account.connectTimeout || this.config.connectTimeout || 30000
       const opts = {
         ...this.config.bot,
         appid: account.appId,
@@ -103,17 +124,42 @@ Bot.tasker.push(
 
       Bot.makeLog('info', `正在连接 QQBot: ${id}, AppID: ${account.appId}`, 'QQBot')
 
+      const networkOk = await this.checkNetwork()
+      if (!networkOk) {
+        Bot.makeLog('error', `${this.name}(${this.id}) ${this.version} 连接失败: 网络不可用，无法解析 bots.qq.com`, id)
+        return false
+      }
+
       const sdk = new QQBotSDK(opts)
 
       Bot[id] = {
         tasker: this,
         sdk,
         login() {
-          return new Promise(resolve => {
-            this.sdk.sessionManager.once("READY", resolve)
-            this.sdk.start()
+          return new Promise((resolve, reject) => {
+            const timer = setTimeout(() => {
+              reject(new Error(`连接超时 (${timeout}ms)`))
+            }, timeout)
+            
+            this.sdk.sessionManager.once("READY", () => {
+              clearTimeout(timer)
+              resolve()
+            })
+            
+            this.sdk.sessionManager.once("DEAD", (err) => {
+              clearTimeout(timer)
+              reject(new Error(err?.msg || "连接失败"))
+            })
+            
+            try {
+              this.sdk.start()
+            } catch (err) {
+              clearTimeout(timer)
+              reject(err)
+            }
           })
         },
+        _cleanup() {},
         logout() {
           return new Promise(resolve => {
             this.sdk.ws.once("close", resolve)
@@ -173,6 +219,14 @@ Bot.tasker.push(
         Object.assign(Bot[id].info, await Bot[id].sdk.getSelfInfo())
       } catch (err) {
         Bot.makeLog('error', `${this.name}(${this.id}) ${this.version} 连接失败: ${err.message}`, id, err)
+        try {
+          Bot[id]._cleanup?.()
+          Bot[id].sdk.stop()
+        } catch (e) {
+          Bot.makeLog('debug', `停止SDK时发生错误: ${e.message}`, id)
+        }
+        delete Bot[id]
+        Bot.uin = Bot.uin.filter(u => u !== id)
         return false
       }
 

@@ -61,6 +61,12 @@ class QQBotManager {
         this.saveApiKeyBtn = document.getElementById('saveApiKeyBtn');
         this.apiKeyInput = document.getElementById('apiKey');
         
+        this.settingsBtn = document.getElementById('settingsBtn');
+        this.settingsOverlay = document.getElementById('settingsOverlay');
+        this.settingsClose = document.getElementById('settingsClose');
+        this.settingsCancel = document.getElementById('settingsCancel');
+        this.settingsSave = document.getElementById('settingsSave');
+        
         if (!this.saveApiKeyBtn) console.warn('saveApiKeyBtn 元素未找到');
         if (!this.apiKeyInput) console.warn('apiKey 元素未找到');
         if (!this.toastContainer) console.warn('toastContainer 元素未找到');
@@ -84,6 +90,18 @@ class QQBotManager {
             this.modalOverlay.addEventListener('click', (e) => {
                 if (e.target === this.modalOverlay) {
                     this.hideModal();
+                }
+            });
+        }
+        
+        if (this.settingsBtn) this.settingsBtn.addEventListener('click', () => this.showSettings());
+        if (this.settingsClose) this.settingsClose.addEventListener('click', () => this.hideSettings());
+        if (this.settingsCancel) this.settingsCancel.addEventListener('click', () => this.hideSettings());
+        if (this.settingsSave) this.settingsSave.addEventListener('click', () => this.saveSettings());
+        if (this.settingsOverlay) {
+            this.settingsOverlay.addEventListener('click', (e) => {
+                if (e.target === this.settingsOverlay) {
+                    this.hideSettings();
                 }
             });
         }
@@ -405,6 +423,84 @@ class QQBotManager {
             hour: '2-digit',
             minute: '2-digit'
         });
+    }
+
+    showSettings() {
+        this.settingsOverlay.classList.add('show');
+        this.loadSettingsData();
+    }
+
+    hideSettings() {
+        this.settingsOverlay.classList.remove('show');
+    }
+
+    async loadSettingsData() {
+        try {
+            const response = await this.fetch('/api/qqbot/config');
+            if (response && response.success && response.config) {
+                const config = response.config;
+                
+                const toQRCode = document.getElementById('settingToQRCode');
+                const toCallback = document.getElementById('settingToCallback');
+                const toBotUpload = document.getElementById('settingToBotUpload');
+                const hideGuildRecall = document.getElementById('settingHideGuildRecall');
+                const imageLength = document.getElementById('settingImageLength');
+                const sandbox = document.getElementById('settingSandbox');
+                const maxRetry = document.getElementById('settingMaxRetry');
+                const timeout = document.getElementById('settingTimeout');
+                const markdownSupport = document.getElementById('settingMarkdownSupport');
+                
+                if (toQRCode) toQRCode.checked = config.toQRCode !== false;
+                if (toCallback) toCallback.checked = config.toCallback !== false;
+                if (toBotUpload) toBotUpload.checked = config.toBotUpload !== false;
+                if (hideGuildRecall) hideGuildRecall.checked = config.hideGuildRecall === true;
+                if (imageLength) imageLength.value = config.imageLength || 3;
+                
+                if (config.bot) {
+                    if (sandbox) sandbox.checked = config.bot.sandbox === true;
+                    if (maxRetry) maxRetry.value = config.bot.maxRetry || 10;
+                    if (timeout) timeout.value = config.bot.timeout || 30000;
+                }
+                
+                if (markdownSupport) markdownSupport.checked = config.defaultMarkdownSupport === true;
+            }
+        } catch (error) {
+            console.error('加载设置失败:', error);
+        }
+    }
+
+    async saveSettings() {
+        try {
+            const config = {
+                toQRCode: document.getElementById('settingToQRCode')?.checked ?? true,
+                toCallback: document.getElementById('settingToCallback')?.checked ?? true,
+                toBotUpload: document.getElementById('settingToBotUpload')?.checked ?? true,
+                hideGuildRecall: document.getElementById('settingHideGuildRecall')?.checked ?? false,
+                imageLength: parseFloat(document.getElementById('settingImageLength')?.value) || 3,
+                bot: {
+                    sandbox: document.getElementById('settingSandbox')?.checked ?? false,
+                    maxRetry: parseInt(document.getElementById('settingMaxRetry')?.value) || 10,
+                    timeout: parseInt(document.getElementById('settingTimeout')?.value) || 30000
+                },
+                defaultMarkdownSupport: document.getElementById('settingMarkdownSupport')?.checked ?? false
+            };
+
+            const response = await this.fetch('/api/qqbot/config', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(config)
+            });
+
+            if (response && response.success) {
+                this.toast('设置已保存', 'success');
+                this.hideSettings();
+            } else {
+                this.toast('保存失败: ' + (response?.message || '未知错误'), 'error');
+            }
+        } catch (error) {
+            console.error('保存设置失败:', error);
+            this.toast('保存失败: ' + error.message, 'error');
+        }
     }
 }
 
