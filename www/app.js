@@ -437,9 +437,7 @@ class QQBotManager {
     async loadSettingsData() {
         try {
             const response = await this.fetch('/api/qqbot/config');
-            if (response && response.success && response.config) {
-                const config = response.config;
-                
+            if (response && response.success) {
                 const toQRCode = document.getElementById('settingToQRCode');
                 const toCallback = document.getElementById('settingToCallback');
                 const toBotUpload = document.getElementById('settingToBotUpload');
@@ -448,21 +446,23 @@ class QQBotManager {
                 const sandbox = document.getElementById('settingSandbox');
                 const maxRetry = document.getElementById('settingMaxRetry');
                 const timeout = document.getElementById('settingTimeout');
+                const tokenRefresh = document.getElementById('settingTokenRefresh');
                 const markdownSupport = document.getElementById('settingMarkdownSupport');
                 
-                if (toQRCode) toQRCode.checked = config.toQRCode !== false;
-                if (toCallback) toCallback.checked = config.toCallback !== false;
-                if (toBotUpload) toBotUpload.checked = config.toBotUpload !== false;
-                if (hideGuildRecall) hideGuildRecall.checked = config.hideGuildRecall === true;
-                if (imageLength) imageLength.value = config.imageLength || 3;
+                if (toQRCode) toQRCode.checked = response.toQRCode !== false;
+                if (toCallback) toCallback.checked = response.toCallback !== false;
+                if (toBotUpload) toBotUpload.checked = response.toBotUpload !== false;
+                if (hideGuildRecall) hideGuildRecall.checked = response.hideGuildRecall === true;
+                if (imageLength) imageLength.value = response.imageLength || 3;
                 
-                if (config.bot) {
-                    if (sandbox) sandbox.checked = config.bot.sandbox === true;
-                    if (maxRetry) maxRetry.value = config.bot.maxRetry || 10;
-                    if (timeout) timeout.value = config.bot.timeout || 30000;
+                if (response.bot) {
+                    if (sandbox) sandbox.checked = response.bot.sandbox === true;
+                    if (maxRetry) maxRetry.value = response.bot.maxRetry || 10;
+                    if (timeout) timeout.value = Math.round((response.bot.timeout || 30000) / 1000);
                 }
                 
-                if (markdownSupport) markdownSupport.checked = config.defaultMarkdownSupport === true;
+                if (tokenRefresh) tokenRefresh.value = Math.round((response.tokenRefreshInterval || 1740000) / 60000);
+                if (markdownSupport) markdownSupport.checked = response.defaultMarkdownSupport === true;
             }
         } catch (error) {
             console.error('加载设置失败:', error);
@@ -471,6 +471,14 @@ class QQBotManager {
 
     async saveSettings() {
         try {
+            const tokenRefreshValue = parseInt(document.getElementById('settingTokenRefresh')?.value) || 29;
+            if (tokenRefreshValue < 10 || tokenRefreshValue > 29) {
+                this.toast('Token刷新间隔必须在10-29分钟之间', 'error');
+                return;
+            }
+
+            const timeoutValue = parseInt(document.getElementById('settingTimeout')?.value) || 30;
+
             const config = {
                 toQRCode: document.getElementById('settingToQRCode')?.checked ?? true,
                 toCallback: document.getElementById('settingToCallback')?.checked ?? true,
@@ -480,8 +488,9 @@ class QQBotManager {
                 bot: {
                     sandbox: document.getElementById('settingSandbox')?.checked ?? false,
                     maxRetry: parseInt(document.getElementById('settingMaxRetry')?.value) || 10,
-                    timeout: parseInt(document.getElementById('settingTimeout')?.value) || 30000
+                    timeout: Math.max(1000, timeoutValue * 1000)
                 },
+                tokenRefreshInterval: tokenRefreshValue * 60000,
                 defaultMarkdownSupport: document.getElementById('settingMarkdownSupport')?.checked ?? false
             };
 

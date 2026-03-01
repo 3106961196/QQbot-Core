@@ -90,6 +90,7 @@ export default {
           toBotUpload: data.toBotUpload,
           hideGuildRecall: data.hideGuildRecall,
           imageLength: data.imageLength,
+          tokenRefreshInterval: data.tokenRefreshInterval,
           defaultMarkdownSupport: data.defaultMarkdownSupport,
         });
       }, 'qqbot.config.read')
@@ -115,12 +116,18 @@ export default {
         if (body.hideGuildRecall !== undefined) data.hideGuildRecall = body.hideGuildRecall;
         if (body.imageLength !== undefined) data.imageLength = body.imageLength;
         if (body.defaultMarkdownSupport !== undefined) data.defaultMarkdownSupport = body.defaultMarkdownSupport;
+        if (body.tokenRefreshInterval !== undefined) {
+          const interval = body.tokenRefreshInterval;
+          if (interval >= 600000 && interval <= 1740000) {
+            data.tokenRefreshInterval = interval;
+          }
+        }
         
         if (body.bot) {
           data.bot = data.bot || {};
           if (body.bot.sandbox !== undefined) data.bot.sandbox = body.bot.sandbox;
           if (body.bot.maxRetry !== undefined) data.bot.maxRetry = body.bot.maxRetry;
-          if (body.bot.timeout !== undefined) data.bot.timeout = body.bot.timeout;
+          if (body.bot.timeout !== undefined) data.bot.timeout = Math.max(1000, body.bot.timeout);
         }
 
         await config.write(data);

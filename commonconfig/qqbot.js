@@ -71,7 +71,7 @@ export default class QQBotConfig extends ConfigBase {
                 type: 'boolean',
                 label: '沙箱模式',
                 description: '是否启用沙箱环境',
-                default: false,
+                default: true,
                 component: 'Switch'
               },
               maxRetry: {
@@ -79,18 +79,35 @@ export default class QQBotConfig extends ConfigBase {
                 label: '最大重试次数',
                 description: '连接失败时的最大重试次数',
                 min: 0,
-                default: 10,
+                default: 5,
                 component: 'InputNumber'
               },
               timeout: {
                 type: 'number',
-                label: '超时时间',
-                description: '请求超时时间(毫秒)',
+                label: '登录超时时间',
+                description: '连接官方服务器超时时间(毫秒)',
                 min: 1000,
                 default: 30000,
                 component: 'InputNumber'
               }
             }
+          },
+          connectTimeout: {
+            type: 'number',
+            label: '连接超时时间',
+            description: 'WebSocket连接超时时间(毫秒)',
+            min: 1000,
+            default: 10000,
+            component: 'InputNumber'
+          },
+          tokenRefreshInterval: {
+            type: 'number',
+            label: 'Token刷新间隔',
+            description: '提前刷新Token的时间(毫秒)，范围10-29分钟',
+            min: 600000,
+            max: 1740000,
+            default: 1740000,
+            component: 'InputNumber'
           },
           toQRCode: {
             type: 'boolean',

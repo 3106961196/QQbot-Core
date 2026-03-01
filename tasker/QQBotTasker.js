@@ -104,7 +104,7 @@ Bot.tasker.push(
 
     async connect(account) {
       const id = account.name || account.appId
-      const timeout = account.connectTimeout || this.config.connectTimeout || 30000
+      const timeout = account.connectTimeout || this.config.connectTimeout || 10000
       const opts = {
         ...this.config.bot,
         appid: account.appId,
@@ -131,18 +131,70 @@ Bot.tasker.push(
       }
 
       const sdk = new QQBotSDK(opts)
+      
+      const tokenRefreshInterval = this.config.tokenRefreshInterval || 1740000
+
+      const tokenManager = {
+        accessToken: null,
+        expiresAt: 0,
+        refreshTimer: null,
+        refreshInterval: tokenRefreshInterval,
+        async refresh() {
+          const axios = (await import('axios')).default
+          try {
+            const res = await axios.post('https://bots.qq.com/app/getAppAccessToken', {
+              appId: opts.appid,
+              clientSecret: opts.secret
+            })
+            if (res.data?.access_token) {
+              this.accessToken = res.data.access_token
+              this.expiresAt = Date.now() + (res.data.expires_in || 7200) * 1000
+              sdk.sessionManager.access_token = this.accessToken
+              Bot.makeLog('debug', `Token 已刷新，有效期至 ${new Date(this.expiresAt).toLocaleTimeString()}`, id)
+              this.scheduleRefresh()
+              return true
+            }
+          } catch (err) {
+            Bot.makeLog('warn', `Token 刷新失败: ${err.message}`, id)
+          }
+          return false
+        },
+        scheduleRefresh() {
+          if (this.refreshTimer) clearTimeout(this.refreshTimer)
+          const ttl = this.expiresAt - Date.now()
+          const refreshTime = ttl - this.refreshInterval
+          if (refreshTime > 0) {
+            this.refreshTimer = setTimeout(() => this.refresh(), refreshTime)
+            Bot.makeLog('debug', `Token 将在 ${Math.round(refreshTime/1000)} 秒后刷新`, id)
+          }
+        },
+        getRemainingTime() {
+          return Math.max(0, this.expiresAt - Date.now())
+        },
+        needRefresh() {
+          return this.getRemainingTime() < this.refreshInterval
+        },
+        stop() {
+          if (this.refreshTimer) {
+            clearTimeout(this.refreshTimer)
+            this.refreshTimer = null
+          }
+        }
+      }
 
       Bot[id] = {
         tasker: this,
         sdk,
+        tokenManager,
         login() {
           return new Promise((resolve, reject) => {
             const timer = setTimeout(() => {
               reject(new Error(`连接超时 (${timeout}ms)`))
             }, timeout)
             
-            this.sdk.sessionManager.once("READY", () => {
+            this.sdk.sessionManager.once("READY", async () => {
               clearTimeout(timer)
+              await this.tokenManager.refresh()
               resolve()
             })
             
@@ -159,7 +211,9 @@ Bot.tasker.push(
             }
           })
         },
-        _cleanup() {},
+        _cleanup() {
+          this.tokenManager?.stop()
+        },
         logout() {
           return new Promise(resolve => {
             this.sdk.ws.once("close", resolve)
@@ -782,6 +836,12 @@ Bot.tasker.push(
     async sendMsg(data, send, msg) {
       const rets = { message_id: [], data: [], error: [] }
       let msgs
+
+      const bot = data.bot
+      if (bot?.tokenManager?.needRefresh()) {
+        Bot.makeLog('debug', `Token 即将过期，正在刷新...`, data.self_id)
+        await bot.tokenManager.refresh()
+      }
 
       const sendMsg = async () => {
         for (const i of msgs) {
