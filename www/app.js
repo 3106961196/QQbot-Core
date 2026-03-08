@@ -105,6 +105,17 @@ class QQBotManager {
                 }
             });
         }
+        
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                if (this.modalOverlay?.classList.contains('show')) {
+                    this.hideModal();
+                }
+                if (this.settingsOverlay?.classList.contains('show')) {
+                    this.hideSettings();
+                }
+            }
+        });
     }
 
     async loadBots() {
@@ -446,7 +457,6 @@ class QQBotManager {
                 const sandbox = document.getElementById('settingSandbox');
                 const maxRetry = document.getElementById('settingMaxRetry');
                 const timeout = document.getElementById('settingTimeout');
-                const tokenRefresh = document.getElementById('settingTokenRefresh');
                 const markdownSupport = document.getElementById('settingMarkdownSupport');
                 
                 if (toQRCode) toQRCode.checked = response.toQRCode !== false;
@@ -461,7 +471,6 @@ class QQBotManager {
                     if (timeout) timeout.value = Math.round((response.bot.timeout || 30000) / 1000);
                 }
                 
-                if (tokenRefresh) tokenRefresh.value = Math.round((response.tokenRefreshInterval || 1740000) / 60000);
                 if (markdownSupport) markdownSupport.checked = response.defaultMarkdownSupport === true;
             }
         } catch (error) {
@@ -471,12 +480,6 @@ class QQBotManager {
 
     async saveSettings() {
         try {
-            const tokenRefreshValue = parseInt(document.getElementById('settingTokenRefresh')?.value) || 29;
-            if (tokenRefreshValue < 10 || tokenRefreshValue > 29) {
-                this.toast('Token刷新间隔必须在10-29分钟之间', 'error');
-                return;
-            }
-
             const timeoutValue = parseInt(document.getElementById('settingTimeout')?.value) || 30;
 
             const config = {
@@ -490,7 +493,6 @@ class QQBotManager {
                     maxRetry: parseInt(document.getElementById('settingMaxRetry')?.value) || 10,
                     timeout: Math.max(1000, timeoutValue * 1000)
                 },
-                tokenRefreshInterval: tokenRefreshValue * 60000,
                 defaultMarkdownSupport: document.getElementById('settingMarkdownSupport')?.checked ?? false
             };
 

@@ -84,30 +84,13 @@ export default class QQBotConfig extends ConfigBase {
               },
               timeout: {
                 type: 'number',
-                label: '登录超时时间',
-                description: '连接官方服务器超时时间(毫秒)',
+                label: 'API请求超时',
+                description: '调用QQ官方API的超时时间(毫秒)',
                 min: 1000,
                 default: 30000,
                 component: 'InputNumber'
               }
             }
-          },
-          connectTimeout: {
-            type: 'number',
-            label: '连接超时时间',
-            description: 'WebSocket连接超时时间(毫秒)',
-            min: 1000,
-            default: 10000,
-            component: 'InputNumber'
-          },
-          tokenRefreshInterval: {
-            type: 'number',
-            label: 'Token刷新间隔',
-            description: '提前刷新Token的时间(毫秒)，范围10-29分钟',
-            min: 600000,
-            max: 1740000,
-            default: 1740000,
-            component: 'InputNumber'
           },
           toQRCode: {
             type: 'boolean',

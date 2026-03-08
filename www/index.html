@@ -47,7 +47,7 @@
                         <line x1="15" y1="9" x2="15.01" y2="9"/>
                     </svg>
                     <p class="empty-text">暂无机器人</p>
-                    <p class="empty-hint">点击右下角按钮添加 QQ 官方机器人</p>
+                    <p class="empty-hint">点击右下角 + 按钮添加 QQ 机器人</p>
                 </div>
             </div>
         </main>
@@ -187,17 +187,10 @@
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="settingTimeout">
-                            <span>登录超时时间</span>
-                            <span class="form-label-hint">连接官方服务器超时时间(秒)</span>
+                            <span>API请求超时</span>
+                            <span class="form-label-hint">调用QQ官方API的超时时间(秒)</span>
                         </label>
                         <input type="number" class="form-input" id="settingTimeout" value="30" min="1" max="300">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label" for="settingTokenRefresh">
-                            <span>Token刷新间隔</span>
-                            <span class="form-label-hint">提前刷新Token的时间(分钟)，范围10-29分钟</span>
-                        </label>
-                        <input type="number" class="form-input" id="settingTokenRefresh" value="29" min="10" max="29">
                     </div>
                 </div>
                 <div class="settings-section">

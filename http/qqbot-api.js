@@ -4,11 +4,26 @@ import ConfigLoader from '../../../src/infrastructure/commonconfig/loader.js';
 import { Bot as QQBotSDK } from 'qq-group-bot';
 
 const CONNECT_TEST_TIMEOUT = 15000
+const authorizedIPs = new Set()
 
 const ensureAuthorized = (req, res, Bot) => {
-  if (Bot.checkApiAuthorization?.(req)) return true;
+  if (Bot.checkApiAuthorization?.(req)) {
+    const ip = req.ip || req.connection?.remoteAddress || 'unknown'
+    if (!authorizedIPs.has(ip)) {
+      authorizedIPs.add(ip)
+      BotUtil.makeLog('info', `🟢 [Web登录] QQBot管理后台 - IP: ${ip}`, 'QQBot')
+    }
+    return true
+  }
+  const ip = req.ip || req.connection?.remoteAddress || 'unknown'
+  BotUtil.makeLog('warn', `🔴 [密钥验证失败] IP: ${ip}`, 'QQBot')
   HttpResponse.forbidden(res, 'Unauthorized');
   return false;
+};
+
+const logWebAccess = (req, Bot, action = '访问') => {
+  const ip = req.ip || req.connection?.remoteAddress || 'unknown'
+  BotUtil.makeLog('debug', `🟢 [Web操作] QQBot管理后台 - IP: ${ip} - ${action}`, 'QQBot')
 };
 
 const getConfigInstance = () => ConfigLoader.get('qqbot');
@@ -28,6 +43,7 @@ export default {
       path: '/api/qqbot/status',
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
         if (!ensureAuthorized(req, res, Bot)) return;
+        logWebAccess(req, Bot, '获取状态')
 
         const tasker = getTasker(Bot);
         const config = getConfigInstance();
@@ -69,6 +85,7 @@ export default {
       path: '/api/qqbot/config',
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
         if (!ensureAuthorized(req, res, Bot)) return;
+        logWebAccess(req, Bot, '获取配置')
 
         const config = getConfigInstance();
         if (!config) {
@@ -90,7 +107,6 @@ export default {
           toBotUpload: data.toBotUpload,
           hideGuildRecall: data.hideGuildRecall,
           imageLength: data.imageLength,
-          tokenRefreshInterval: data.tokenRefreshInterval,
           defaultMarkdownSupport: data.defaultMarkdownSupport,
         });
       }, 'qqbot.config.read')
@@ -101,6 +117,7 @@ export default {
       path: '/api/qqbot/config',
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
         if (!ensureAuthorized(req, res, Bot)) return;
+        logWebAccess(req, Bot, '更新配置')
 
         const config = getConfigInstance();
         if (!config) {
@@ -116,12 +133,6 @@ export default {
         if (body.hideGuildRecall !== undefined) data.hideGuildRecall = body.hideGuildRecall;
         if (body.imageLength !== undefined) data.imageLength = body.imageLength;
         if (body.defaultMarkdownSupport !== undefined) data.defaultMarkdownSupport = body.defaultMarkdownSupport;
-        if (body.tokenRefreshInterval !== undefined) {
-          const interval = body.tokenRefreshInterval;
-          if (interval >= 600000 && interval <= 1740000) {
-            data.tokenRefreshInterval = interval;
-          }
-        }
         
         if (body.bot) {
           data.bot = data.bot || {};
@@ -248,6 +259,7 @@ export default {
       path: '/api/qqbot/accounts/:appId',
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
         if (!ensureAuthorized(req, res, Bot)) return;
+        logWebAccess(req, Bot, `删除账号 ${req.params.appId}`)
 
         const config = getConfigInstance();
         if (!config) {
