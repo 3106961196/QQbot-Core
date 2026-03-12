@@ -71,7 +71,7 @@ export default class QQBotConfig extends ConfigBase {
                 type: 'boolean',
                 label: '沙箱模式',
                 description: '是否启用沙箱环境',
-                default: true,
+                default: false,
                 component: 'Switch'
               },
               maxRetry: {
