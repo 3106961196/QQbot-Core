@@ -32,6 +32,19 @@ const getTasker = (Bot) => {
   return Bot.tasker.find(t => t.id === 'QQBot');
 };
 
+const saveMastersToConfig = async () => {
+  try {
+    const cfg = (await import('../../../src/infrastructure/config/config.js')).default
+    const chatbotConfig = cfg.chatbot || {}
+    chatbotConfig.master = chatbotConfig.master || {}
+    chatbotConfig.master.qq = BotUtil.master.slice()
+    cfg.setConfig('chatbot', chatbotConfig)
+    BotUtil.makeLog('debug', `QQBot 主人列表已保存到配置: ${BotUtil.master.length} 个`, 'QQBot')
+  } catch (err) {
+    BotUtil.makeLog('error', `保存主人列表失败: ${err.message}`, 'QQBot', err)
+  }
+};
+
 export default {
   name: 'qqbot-manager',
   dsc: 'QQBot管理API - QQBot配置与状态管理接口',
@@ -374,6 +387,175 @@ export default {
           HttpResponse.error(res, err, 500, 'qqbot.reload');
         }
       }, 'qqbot.reload')
+    },
+
+    {
+      method: 'POST',
+      path: '/api/qqbot/master/:botId',
+      handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
+        if (!ensureAuthorized(req, res, Bot)) return;
+        logWebAccess(req, Bot, `添加主人 ${req.params.botId}`)
+
+        const { botId } = req.params
+        const { user_id } = req.body || {}
+
+        if (!user_id) {
+          return HttpResponse.badRequest(res, 'user_id 不能为空')
+        }
+
+        const bot = Bot[botId]
+        if (!bot) {
+          return HttpResponse.notFound(res, '机器人不存在或未在线')
+        }
+
+        try {
+          const masterKey = `${botId}:${user_id}`
+          if (!Bot.master.includes(masterKey)) {
+            Bot.master.push(masterKey)
+            await saveMastersToConfig()
+            BotUtil.makeLog('info', `🟢 [添加主人] QQBot (${bot.nickname || botId}) - 用户: ${user_id}`, 'QQBot')
+            HttpResponse.success(res, { user_id }, '添加主人成功')
+          } else {
+            HttpResponse.success(res, { user_id }, '该用户已是主人')
+          }
+        } catch (err) {
+          BotUtil.makeLog('error', `添加主人失败: ${err.message}`, 'QQBotAPI', err)
+          HttpResponse.error(res, err, 500, 'qqbot.master.add')
+        }
+      }, 'qqbot.master.add')
+    },
+
+    {
+      method: 'GET',
+      path: '/api/qqbot/master/:botId',
+      handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
+        if (!ensureAuthorized(req, res, Bot)) return;
+
+        const { botId } = req.params
+        const cfg = (await import('../../../src/infrastructure/config/config.js')).default
+        const masterList = cfg.master?.[botId] || []
+        const masters = masterList.map(m => {
+          const str = String(m)
+          return str.includes(':') ? str.substring(str.indexOf(':') + 1) : str
+        })
+
+        HttpResponse.success(res, { masters })
+      }, 'qqbot.master.list')
+    },
+
+    {
+      method: 'DELETE',
+      path: '/api/qqbot/master/:botId/:master',
+      handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
+        if (!ensureAuthorized(req, res, Bot)) return;
+        logWebAccess(req, Bot, `移除主人 ${req.params.botId}/${req.params.master}`)
+
+        const { botId, master } = req.params
+        const masterKey = `${botId}:${master}`
+        const index = Bot.master.indexOf(masterKey)
+
+        if (index > -1) {
+          Bot.master.splice(index, 1)
+          await saveMastersToConfig()
+          BotUtil.makeLog('info', `🔴 [移除主人] QQBot (${botId}) - 用户: ${master}`, 'QQBot')
+          HttpResponse.success(res, null, '移除成功')
+        } else {
+          HttpResponse.notFound(res, '该主人不存在')
+        }
+      }, 'qqbot.master.remove')
+    },
+
+    {
+      method: 'GET',
+      path: '/api/qqbot/accounts/:appId/config',
+      handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
+        if (!ensureAuthorized(req, res, Bot)) return;
+
+        const { appId } = req.params
+        const config = getConfigInstance()
+        if (!config) {
+          return HttpResponse.notFound(res, 'QQBot配置实例未找到')
+        }
+
+        const data = await config.read()
+        const account = (data.accounts || []).find(a => a.appId === appId)
+
+        if (!account) {
+          return HttpResponse.notFound(res, '账户不存在')
+        }
+
+        HttpResponse.success(res, {
+          config: {
+            sandbox: data.bot?.sandbox ?? false,
+            maxRetry: data.bot?.maxRetry ?? 10,
+            timeout: data.bot?.timeout ?? 30000,
+            markdownSupport: account.markdownSupport ?? false,
+            toQRCode: data.toQRCode ?? true,
+            toCallback: data.toCallback ?? true,
+            toBotUpload: data.toBotUpload ?? true,
+            hideGuildRecall: data.hideGuildRecall ?? false,
+            imageLength: data.imageLength ?? 3
+          }
+        })
+      }, 'qqbot.account.config.read')
+    },
+
+    {
+      method: 'PUT',
+      path: '/api/qqbot/accounts/:appId/config',
+      handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
+        if (!ensureAuthorized(req, res, Bot)) return;
+        logWebAccess(req, Bot, `更新账户配置 ${req.params.appId}`)
+
+        const { appId } = req.params
+        const config = getConfigInstance()
+        if (!config) {
+          return HttpResponse.notFound(res, 'QQBot配置实例未找到')
+        }
+
+        const data = await config.read()
+        const accountIndex = (data.accounts || []).findIndex(a => a.appId === appId)
+
+        if (accountIndex === -1) {
+          return HttpResponse.notFound(res, '账户不存在')
+        }
+
+        const body = req.body || {}
+
+        if (body.sandbox !== undefined) {
+          data.bot = data.bot || {}
+          data.bot.sandbox = body.sandbox
+        }
+        if (body.maxRetry !== undefined) {
+          data.bot = data.bot || {}
+          data.bot.maxRetry = body.maxRetry
+        }
+        if (body.timeout !== undefined) {
+          data.bot = data.bot || {}
+          data.bot.timeout = Math.max(1000, body.timeout)
+        }
+        if (body.markdownSupport !== undefined) {
+          data.accounts[accountIndex].markdownSupport = body.markdownSupport
+        }
+        if (body.toQRCode !== undefined) {
+          data.toQRCode = body.toQRCode
+        }
+        if (body.toCallback !== undefined) {
+          data.toCallback = body.toCallback
+        }
+        if (body.toBotUpload !== undefined) {
+          data.toBotUpload = body.toBotUpload
+        }
+        if (body.hideGuildRecall !== undefined) {
+          data.hideGuildRecall = body.hideGuildRecall
+        }
+        if (body.imageLength !== undefined) {
+          data.imageLength = body.imageLength
+        }
+
+        await config.write(data)
+        HttpResponse.success(res, null, '配置已保存')
+      }, 'qqbot.account.config.update')
     },
   ]
 };

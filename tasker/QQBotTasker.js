@@ -1,5 +1,6 @@
 import { Bot as QQBotSDK } from "qq-group-bot"
 import ConfigLoader from "../../../src/infrastructure/commonconfig/loader.js"
+import BotUtil from "../../../src/utils/botutil.js"
 import { MessageBuilder } from "./message-builder.js"
 import { MessageHandler } from "./message-handler.js"
 
@@ -32,6 +33,7 @@ Bot.tasker.push(
     async load() {
       try {
         await this.loadConfig()
+        this.loadMasters()
         this.setupQRCodeRegex()
         await this.loadSharp()
         this.printWebUrl()
@@ -42,6 +44,13 @@ Bot.tasker.push(
       } catch (err) {
         Bot.makeLog('error', `QQBot加载失败: ${err.message}`, 'QQBot', err)
       }
+    }
+
+    loadMasters() {
+      const masterQQ = cfg.chatbot?.master?.qq || []
+      const list = Array.isArray(masterQQ) ? masterQQ : [masterQQ]
+      BotUtil.master = list.map(m => String(m))
+      Bot.makeLog('debug', `QQBot 主人列表已加载: ${BotUtil.master.length} 个`, 'QQBot')
     }
 
     initMessageModules() {

@@ -276,6 +276,113 @@ body {
 .bot-card-actions {
     display: flex;
     gap: 8px;
+    align-items: center;
+}
+
+.bot-card-actions .btn-bot-settings {
+    margin-left: auto;
+}
+
+.btn-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: none;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.btn-icon svg {
+    width: 18px;
+    height: 18px;
+}
+
+.btn-icon:hover {
+    background: var(--primary);
+    color: white;
+    transform: scale(1.1);
+}
+
+.btn-icon.btn-sm {
+    width: 24px;
+    height: 24px;
+    font-size: 12px;
+}
+
+.bot-info-display {
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    padding: 12px;
+}
+
+.bot-info-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.bot-info-row:last-child {
+    border-bottom: none;
+}
+
+.bot-info-label {
+    color: var(--text-secondary);
+    font-size: 14px;
+}
+
+.bot-info-value {
+    color: var(--text-primary);
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.master-list {
+    max-height: 200px;
+    overflow-y: auto;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    padding: 8px;
+}
+
+.master-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: var(--bg-primary);
+    border-radius: 6px;
+    margin-bottom: 4px;
+}
+
+.master-item:last-child {
+    margin-bottom: 0;
+}
+
+.master-id {
+    font-size: 14px;
+    color: var(--text-primary);
+}
+
+.master-input-row {
+    display: flex;
+    gap: 8px;
+}
+
+.master-input-row .form-input {
+    flex: 1;
+}
+
+.empty-hint {
+    color: var(--text-secondary);
+    font-size: 14px;
+    text-align: center;
+    padding: 20px;
 }
 
 .btn {
@@ -436,6 +543,25 @@ body {
     box-shadow: var(--shadow-lg);
     transform: scale(0.9);
     transition: transform 0.2s ease;
+}
+
+.modal-lg {
+    max-width: 520px;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.modal-lg .modal-body {
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+}
+
+.modal-lg .modal-footer {
+    flex-shrink: 0;
+    background: var(--bg-card);
+    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
 }
 
 .modal-settings {

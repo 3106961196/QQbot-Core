@@ -20,12 +20,6 @@
                 <span class="brand-name">QQBot 管理</span>
             </div>
             <div class="header-actions">
-                <button class="btn btn-sm btn-secondary" id="settingsBtn" title="设置">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="12" cy="12" r="3"/>
-                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-                    </svg>
-                </button>
                 <div class="api-key-box">
                     <input type="password" class="api-key-input" id="apiKey" placeholder="API Key">
                     <button class="btn btn-sm btn-primary" id="saveApiKeyBtn">保存</button>
@@ -104,27 +98,85 @@
         </div>
     </div>
 
-    <div class="modal-overlay" id="settingsOverlay">
-        <div class="modal modal-settings" id="settingsModal">
+    <div class="modal-overlay" id="botSettingsOverlay">
+        <div class="modal modal-lg">
             <div class="modal-header">
-                <h2 class="modal-title">设置</h2>
-                <button class="modal-close" id="settingsClose">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="18" y1="6" x2="6" y2="18"/>
-                        <line x1="6" y1="6" x2="18" y2="18"/>
-                    </svg>
-                </button>
+                <h2 class="modal-title">机器人设置</h2>
+                <button class="modal-close" id="botSettingsClose">&times;</button>
             </div>
             <div class="modal-body">
                 <div class="settings-section">
-                    <h3 class="settings-section-title">全局配置</h3>
+                    <h3 class="settings-section-title">基本信息</h3>
+                    <div class="bot-info-display">
+                        <div class="bot-info-row">
+                            <span class="bot-info-label">机器人名称</span>
+                            <span class="bot-info-value" id="botSettingName">-</span>
+                        </div>
+                        <div class="bot-info-row">
+                            <span class="bot-info-label">AppID</span>
+                            <span class="bot-info-value" id="botSettingAppId">-</span>
+                        </div>
+                        <div class="bot-info-row">
+                            <span class="bot-info-label">状态</span>
+                            <span class="bot-info-value" id="botSettingStatus">-</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="settings-section">
+                    <h3 class="settings-section-title">主人管理</h3>
+                    <div class="master-list" id="masterList">
+                        <p class="empty-hint">暂无主人</p>
+                    </div>
+                    <div class="form-group" style="margin-top: 12px;">
+                        <div class="master-input-row">
+                            <input type="text" class="form-input" id="newMasterId" placeholder="输入QQ号或user_id">
+                            <button class="btn btn-primary btn-sm" id="addMasterBtn">添加</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="settings-section">
+                    <h3 class="settings-section-title">Bot配置</h3>
+                    <div class="form-group">
+                        <label class="form-label">
+                            <span>沙箱模式</span>
+                            <span class="form-label-hint">是否启用沙箱环境</span>
+                        </label>
+                        <label class="switch">
+                            <input type="checkbox" id="botSettingSandbox">
+                            <span class="switch-slider"></span>
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="botSettingMaxRetry">
+                            <span>最大重试次数</span>
+                            <span class="form-label-hint">连接失败时的最大重试次数</span>
+                        </label>
+                        <input type="number" class="form-input" id="botSettingMaxRetry" value="10" min="0" max="100">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="botSettingTimeout">
+                            <span>API请求超时</span>
+                            <span class="form-label-hint">调用QQ官方API的超时时间(秒)</span>
+                        </label>
+                        <input type="number" class="form-input" id="botSettingTimeout" value="30" min="1" max="300">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">
+                            <span>Markdown支持</span>
+                            <span class="form-label-hint">是否启用Markdown消息格式</span>
+                        </label>
+                        <label class="switch">
+                            <input type="checkbox" id="botSettingMarkdown">
+                            <span class="switch-slider"></span>
+                        </label>
+                    </div>
                     <div class="form-group">
                         <label class="form-label">
                             <span>URL转二维码</span>
                             <span class="form-label-hint">将URL转换为二维码图片</span>
                         </label>
                         <label class="switch">
-                            <input type="checkbox" id="settingToQRCode" checked>
+                            <input type="checkbox" id="botSettingToQRCode">
                             <span class="switch-slider"></span>
                         </label>
                     </div>
@@ -134,7 +186,7 @@
                             <span class="form-label-hint">启用按钮点击回调功能</span>
                         </label>
                         <label class="switch">
-                            <input type="checkbox" id="settingToCallback" checked>
+                            <input type="checkbox" id="botSettingToCallback">
                             <span class="switch-slider"></span>
                         </label>
                     </div>
@@ -144,7 +196,7 @@
                             <span class="form-label-hint">使用Bot上传图片和语音资源</span>
                         </label>
                         <label class="switch">
-                            <input type="checkbox" id="settingToBotUpload" checked>
+                            <input type="checkbox" id="botSettingToBotUpload">
                             <span class="switch-slider"></span>
                         </label>
                     </div>
@@ -154,62 +206,22 @@
                             <span class="form-label-hint">撤回频道消息时是否隐藏</span>
                         </label>
                         <label class="switch">
-                            <input type="checkbox" id="settingHideGuildRecall">
+                            <input type="checkbox" id="botSettingHideGuildRecall">
                             <span class="switch-slider"></span>
                         </label>
                     </div>
                     <div class="form-group">
-                        <label class="form-label" for="settingImageLength">
+                        <label class="form-label" for="botSettingImageLength">
                             <span>图片压缩阈值</span>
                             <span class="form-label-hint">超过此大小(MB)的图片将被压缩</span>
                         </label>
-                        <input type="number" class="form-input" id="settingImageLength" value="3" min="0" max="50" step="0.5">
-                    </div>
-                </div>
-                <div class="settings-section">
-                    <h3 class="settings-section-title">Bot 基础配置</h3>
-                    <div class="form-group">
-                        <label class="form-label">
-                            <span>沙箱模式</span>
-                            <span class="form-label-hint">是否启用沙箱环境</span>
-                        </label>
-                        <label class="switch">
-                            <input type="checkbox" id="settingSandbox">
-                            <span class="switch-slider"></span>
-                        </label>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label" for="settingMaxRetry">
-                            <span>最大重试次数</span>
-                            <span class="form-label-hint">连接失败时的最大重试次数</span>
-                        </label>
-                        <input type="number" class="form-input" id="settingMaxRetry" value="10" min="0" max="100">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label" for="settingTimeout">
-                            <span>API请求超时</span>
-                            <span class="form-label-hint">调用QQ官方API的超时时间(秒)</span>
-                        </label>
-                        <input type="number" class="form-input" id="settingTimeout" value="30" min="1" max="300">
-                    </div>
-                </div>
-                <div class="settings-section">
-                    <h3 class="settings-section-title">账户默认配置</h3>
-                    <div class="form-group">
-                        <label class="form-label">
-                            <span>Markdown支持</span>
-                            <span class="form-label-hint">新账户默认启用Markdown消息格式</span>
-                        </label>
-                        <label class="switch">
-                            <input type="checkbox" id="settingMarkdownSupport">
-                            <span class="switch-slider"></span>
-                        </label>
+                        <input type="number" class="form-input" id="botSettingImageLength" value="3" min="0" max="50" step="0.5">
                     </div>
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" id="settingsCancel">取消</button>
-                <button class="btn btn-primary" id="settingsSave">
+                <button class="btn btn-secondary" id="botSettingsCancel">取消</button>
+                <button class="btn btn-primary" id="botSettingsSave">
                     <span class="btn-text">保存设置</span>
                 </button>
             </div>

@@ -61,11 +61,15 @@ class QQBotManager {
         this.saveApiKeyBtn = document.getElementById('saveApiKeyBtn');
         this.apiKeyInput = document.getElementById('apiKey');
         
-        this.settingsBtn = document.getElementById('settingsBtn');
-        this.settingsOverlay = document.getElementById('settingsOverlay');
-        this.settingsClose = document.getElementById('settingsClose');
-        this.settingsCancel = document.getElementById('settingsCancel');
-        this.settingsSave = document.getElementById('settingsSave');
+        this.botSettingsOverlay = document.getElementById('botSettingsOverlay');
+        this.botSettingsClose = document.getElementById('botSettingsClose');
+        this.botSettingsCancel = document.getElementById('botSettingsCancel');
+        this.botSettingsSave = document.getElementById('botSettingsSave');
+        this.addMasterBtn = document.getElementById('addMasterBtn');
+        this.newMasterId = document.getElementById('newMasterId');
+        
+        this.currentBotId = null;
+        this.currentAppId = null;
         
         if (!this.saveApiKeyBtn) console.warn('saveApiKeyBtn 元素未找到');
         if (!this.apiKeyInput) console.warn('apiKey 元素未找到');
@@ -94,14 +98,14 @@ class QQBotManager {
             });
         }
         
-        if (this.settingsBtn) this.settingsBtn.addEventListener('click', () => this.showSettings());
-        if (this.settingsClose) this.settingsClose.addEventListener('click', () => this.hideSettings());
-        if (this.settingsCancel) this.settingsCancel.addEventListener('click', () => this.hideSettings());
-        if (this.settingsSave) this.settingsSave.addEventListener('click', () => this.saveSettings());
-        if (this.settingsOverlay) {
-            this.settingsOverlay.addEventListener('click', (e) => {
-                if (e.target === this.settingsOverlay) {
-                    this.hideSettings();
+        if (this.botSettingsClose) this.botSettingsClose.addEventListener('click', () => this.hideBotSettings());
+        if (this.botSettingsCancel) this.botSettingsCancel.addEventListener('click', () => this.hideBotSettings());
+        if (this.botSettingsSave) this.botSettingsSave.addEventListener('click', () => this.saveBotSettings());
+        if (this.addMasterBtn) this.addMasterBtn.addEventListener('click', () => this.addMasterFromSettings());
+        if (this.botSettingsOverlay) {
+            this.botSettingsOverlay.addEventListener('click', (e) => {
+                if (e.target === this.botSettingsOverlay) {
+                    this.hideBotSettings();
                 }
             });
         }
@@ -113,6 +117,9 @@ class QQBotManager {
                 }
                 if (this.settingsOverlay?.classList.contains('show')) {
                     this.hideSettings();
+                }
+                if (this.botSettingsOverlay?.classList.contains('show')) {
+                    this.hideBotSettings();
                 }
             }
         });
@@ -164,6 +171,14 @@ class QQBotManager {
             btn.addEventListener('click', (e) => {
                 const appId = e.currentTarget.dataset.appId;
                 this.deleteBot(appId);
+            });
+        });
+
+        this.botList.querySelectorAll('.btn-bot-settings').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const botId = e.currentTarget.dataset.id;
+                const appId = e.currentTarget.dataset.appId;
+                this.showBotSettings(botId, appId);
             });
         });
     }
@@ -223,6 +238,12 @@ class QQBotManager {
                             <path d="M19,6v14a2,2,0,0,1-2,2H7a2,2,0,0,1-2-2V6m3,0V4a2,2,0,0,1,2-2h4a2,2,0,0,1,2,2v2"/>
                         </svg>
                         删除
+                    </button>
+                    <button class="btn-icon btn-bot-settings" data-id="${bot.id}" data-app-id="${bot.appId}" title="设置">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="3"/>
+                            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                        </svg>
                     </button>
                 </div>
             </div>
@@ -369,6 +390,174 @@ class QQBotManager {
             }
         } catch (error) {
             this.toast('删除失败: ' + error.message, 'error');
+        }
+    }
+
+    async addMaster(botId) {
+        const userId = prompt('请输入要添加的QQ管理员 user_id:');
+        if (!userId || !userId.trim()) {
+            return;
+        }
+
+        try {
+            const response = await this.fetch(`/api/qqbot/master/${encodeURIComponent(botId)}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_id: userId.trim() })
+            });
+            if (response.success) {
+                this.toast('添加主人成功', 'success');
+            } else {
+                this.toast('添加失败: ' + (response.message || '未知错误'), 'error');
+            }
+        } catch (error) {
+            this.toast('添加失败: ' + error.message, 'error');
+        }
+    }
+
+    async showBotSettings(botId, appId) {
+        this.currentBotId = botId;
+        this.currentAppId = appId;
+        
+        const bot = this.bots.find(b => b.id === botId);
+        if (!bot) {
+            this.toast('机器人不存在', 'error');
+            return;
+        }
+        
+        document.getElementById('botSettingName').textContent = bot.nickname || bot.id;
+        document.getElementById('botSettingAppId').textContent = appId;
+        document.getElementById('botSettingStatus').textContent = bot.status === 'online' ? '在线' : '离线';
+        
+        await this.loadBotMasters(botId);
+        await this.loadBotConfig(botId, appId);
+        
+        this.botSettingsOverlay.classList.add('show');
+    }
+
+    hideBotSettings() {
+        this.botSettingsOverlay.classList.remove('show');
+        this.currentBotId = null;
+        this.currentAppId = null;
+    }
+
+    async loadBotMasters(botId) {
+        try {
+            const response = await this.fetch(`/api/qqbot/master/${encodeURIComponent(botId)}`);
+            const masterList = document.getElementById('masterList');
+            
+            if (response.success && response.masters && response.masters.length > 0) {
+                masterList.innerHTML = response.masters.map(master => `
+                    <div class="master-item">
+                        <span class="master-id">${master}</span>
+                        <button class="btn-icon btn-sm btn-remove-master" data-master="${master}" title="移除">
+                            ✕
+                        </button>
+                    </div>
+                `).join('');
+                
+                masterList.querySelectorAll('.btn-remove-master').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const master = e.currentTarget.dataset.master;
+                        this.removeMaster(botId, master);
+                    });
+                });
+            } else {
+                masterList.innerHTML = '<p class="empty-hint">暂无主人</p>';
+            }
+        } catch (error) {
+            console.error('加载主人列表失败:', error);
+        }
+    }
+
+    async loadBotConfig(botId, appId) {
+        try {
+            const response = await this.fetch(`/api/qqbot/accounts/${appId}/config`);
+            if (response.success && response.config) {
+                const config = response.config;
+                document.getElementById('botSettingSandbox').checked = config.sandbox === true;
+                document.getElementById('botSettingMaxRetry').value = config.maxRetry || 10;
+                document.getElementById('botSettingTimeout').value = Math.round((config.timeout || 30000) / 1000);
+                document.getElementById('botSettingMarkdown').checked = config.markdownSupport === true;
+                document.getElementById('botSettingToQRCode').checked = config.toQRCode !== false;
+                document.getElementById('botSettingToCallback').checked = config.toCallback !== false;
+                document.getElementById('botSettingToBotUpload').checked = config.toBotUpload !== false;
+                document.getElementById('botSettingHideGuildRecall').checked = config.hideGuildRecall === true;
+                document.getElementById('botSettingImageLength').value = config.imageLength || 3;
+            }
+        } catch (error) {
+            console.error('加载机器人配置失败:', error);
+        }
+    }
+
+    async addMasterFromSettings() {
+        const userId = this.newMasterId.value.trim();
+        if (!userId) {
+            this.toast('请输入用户ID', 'error');
+            return;
+        }
+
+        try {
+            const response = await this.fetch(`/api/qqbot/master/${encodeURIComponent(this.currentBotId)}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_id: userId })
+            });
+            if (response.success) {
+                this.toast('添加成功', 'success');
+                this.newMasterId.value = '';
+                await this.loadBotMasters(this.currentBotId);
+            } else {
+                this.toast('添加失败: ' + (response.message || '未知错误'), 'error');
+            }
+        } catch (error) {
+            this.toast('添加失败: ' + error.message, 'error');
+        }
+    }
+
+    async removeMaster(botId, master) {
+        try {
+            const response = await this.fetch(`/api/qqbot/master/${encodeURIComponent(botId)}/${encodeURIComponent(master)}`, {
+                method: 'DELETE'
+            });
+            if (response.success) {
+                this.toast('移除成功', 'success');
+                await this.loadBotMasters(botId);
+            } else {
+                this.toast('移除失败: ' + (response.message || '未知错误'), 'error');
+            }
+        } catch (error) {
+            this.toast('移除失败: ' + error.message, 'error');
+        }
+    }
+
+    async saveBotSettings() {
+        const config = {
+            sandbox: document.getElementById('botSettingSandbox').checked,
+            maxRetry: parseInt(document.getElementById('botSettingMaxRetry').value) || 10,
+            timeout: Math.max(1000, (parseInt(document.getElementById('botSettingTimeout').value) || 30) * 1000),
+            markdownSupport: document.getElementById('botSettingMarkdown').checked,
+            toQRCode: document.getElementById('botSettingToQRCode').checked,
+            toCallback: document.getElementById('botSettingToCallback').checked,
+            toBotUpload: document.getElementById('botSettingToBotUpload').checked,
+            hideGuildRecall: document.getElementById('botSettingHideGuildRecall').checked,
+            imageLength: parseFloat(document.getElementById('botSettingImageLength').value) || 3
+        };
+
+        try {
+            const response = await this.fetch(`/api/qqbot/accounts/${this.currentAppId}/config`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(config)
+            });
+            if (response.success) {
+                this.toast('保存成功', 'success');
+                this.hideBotSettings();
+            } else {
+                this.toast('保存失败: ' + (response.message || '未知错误'), 'error');
+            }
+        } catch (error) {
+            this.toast('保存失败: ' + error.message, 'error');
         }
     }
 
