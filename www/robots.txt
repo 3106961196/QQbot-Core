@@ -1,0 +1,4 @@
+User-agent: *
+Disallow: /core/QQbot-Core/
+Disallow: /api/
+Noindex: /core/QQbot-Core/

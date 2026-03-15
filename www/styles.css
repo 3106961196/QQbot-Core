@@ -77,28 +77,6 @@ body {
     gap: 16px;
 }
 
-.api-key-box {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.api-key-input {
-    width: 180px;
-    padding: 6px 12px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    font-size: 13px;
-    background: var(--bg-input);
-    color: var(--text-primary);
-}
-
-.api-key-input:focus {
-    outline: none;
-    border-color: var(--primary);
-    box-shadow: 0 0 0 3px var(--primary-light);
-}
-
 .header-status {
     display: flex;
     align-items: center;
@@ -892,4 +870,83 @@ body {
     .modal-footer {
         padding: 16px;
     }
+}
+
+.modal-sm {
+    max-width: 400px;
+    width: 90%;
+}
+
+.temp-key-result {
+    margin-top: 16px;
+    padding: 16px;
+    background: var(--bg-input);
+    border-radius: var(--radius);
+}
+
+.temp-key-display {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px;
+}
+
+.temp-key-display code {
+    flex: 1;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 14px;
+    color: var(--primary);
+    word-break: break-all;
+}
+
+.temp-key-display .btn {
+    flex-shrink: 0;
+}
+
+.temp-key-hint {
+    margin-top: 12px;
+    font-size: 12px;
+    color: var(--text-muted);
+    text-align: center;
+}
+
+.temp-key-hint span {
+    color: var(--warning);
+    font-weight: 600;
+}
+
+.btn-link {
+    background: none;
+    border: none;
+    color: var(--primary);
+    cursor: pointer;
+    font-size: inherit;
+    padding: 0;
+    text-decoration: underline;
+}
+
+.btn-link:hover {
+    color: var(--primary-dark);
+}
+
+.temp-key-tip {
+    background: var(--success-light);
+    border: 1px solid var(--success);
+    border-radius: var(--radius);
+    padding: 12px;
+    text-align: center;
+}
+
+.temp-key-tip p {
+    margin: 0;
+    color: var(--text-primary);
+}
+
+.temp-key-tip-sub {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 4px !important;
 }

@@ -3,15 +3,20 @@ const API_BASE = '';
 class QQBotManager {
     constructor() {
         this.bots = [];
+        this.isAuthenticated = false;
         this.init();
     }
 
-    init() {
+    async init() {
         try {
             this.bindElements();
             this.bindEvents();
-            this.loadSettings();
-            this.loadBots();
+            const isAuthed = await this.checkAuth()
+            if (isAuthed) {
+                this.loadBots()
+            } else {
+                this.showLoginPrompt()
+            }
         } catch (error) {
             console.error('初始化失败:', error);
             this.toast('页面初始化失败: ' + error.message, 'error');
@@ -19,31 +24,6 @@ class QQBotManager {
     }
 
     loadSettings() {
-        const savedKey = localStorage.getItem('apiKey');
-        if (savedKey && this.apiKeyInput) {
-            this.apiKeyInput.value = savedKey;
-        }
-    }
-
-    saveApiKey() {
-        try {
-            const apiKey = this.apiKeyInput ? this.apiKeyInput.value.trim() : '';
-            if (apiKey) {
-                localStorage.setItem('apiKey', apiKey);
-                this.toast('API Key 已保存', 'success');
-                this.loadBots();
-            } else {
-                localStorage.removeItem('apiKey');
-                this.toast('API Key 已清除', 'warning');
-            }
-        } catch (error) {
-            console.error('保存API Key失败:', error);
-            this.toast('保存失败: ' + error.message, 'error');
-        }
-    }
-
-    getApiKey() {
-        return localStorage.getItem('apiKey') || '';
     }
 
     bindElements() {
@@ -58,8 +38,6 @@ class QQBotManager {
         this.appIdInput = document.getElementById('appId');
         this.appSecretInput = document.getElementById('appSecret');
         this.toastContainer = document.getElementById('toastContainer');
-        this.saveApiKeyBtn = document.getElementById('saveApiKeyBtn');
-        this.apiKeyInput = document.getElementById('apiKey');
         
         this.botSettingsOverlay = document.getElementById('botSettingsOverlay');
         this.botSettingsClose = document.getElementById('botSettingsClose');
@@ -68,11 +46,27 @@ class QQBotManager {
         this.addMasterBtn = document.getElementById('addMasterBtn');
         this.newMasterId = document.getElementById('newMasterId');
         
+        this.tempKeyLoginOverlay = document.getElementById('tempKeyLoginOverlay');
+        this.tempKeyInput = document.getElementById('tempKeyInput');
+        this.tempKeyLoginSubmit = document.getElementById('tempKeyLoginSubmit');
+        this.generateTempKeyBtn = document.getElementById('generateTempKeyBtn');
+        this.tempKeyTip = document.getElementById('tempKeyTip');
+        
+        this.settingsOverlay = document.getElementById('settingsOverlay');
+        this.settingToQRCode = document.getElementById('settingToQRCode');
+        this.settingToCallback = document.getElementById('settingToCallback');
+        this.settingToBotUpload = document.getElementById('settingToBotUpload');
+        this.settingHideGuildRecall = document.getElementById('settingHideGuildRecall');
+        this.settingImageLength = document.getElementById('settingImageLength');
+        this.settingSandbox = document.getElementById('settingSandbox');
+        this.settingMaxRetry = document.getElementById('settingMaxRetry');
+        this.settingTimeout = document.getElementById('settingTimeout');
+        this.settingMarkdownSupport = document.getElementById('settingMarkdownSupport');
+        this.botSettingAutoConnect = document.getElementById('botSettingAutoConnect');
+        
         this.currentBotId = null;
         this.currentAppId = null;
         
-        if (!this.saveApiKeyBtn) console.warn('saveApiKeyBtn 元素未找到');
-        if (!this.apiKeyInput) console.warn('apiKey 元素未找到');
         if (!this.toastContainer) console.warn('toastContainer 元素未找到');
     }
 
@@ -81,15 +75,6 @@ class QQBotManager {
         if (this.modalClose) this.modalClose.addEventListener('click', () => this.hideModal());
         if (this.btnCancel) this.btnCancel.addEventListener('click', () => this.hideModal());
         if (this.btnSubmit) this.btnSubmit.addEventListener('click', () => this.handleSubmit());
-        if (this.saveApiKeyBtn) this.saveApiKeyBtn.addEventListener('click', () => this.saveApiKey());
-        if (this.apiKeyInput) {
-            this.apiKeyInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    this.saveApiKey();
-                }
-            });
-        }
         if (this.modalOverlay) {
             this.modalOverlay.addEventListener('click', (e) => {
                 if (e.target === this.modalOverlay) {
@@ -106,6 +91,15 @@ class QQBotManager {
             this.botSettingsOverlay.addEventListener('click', (e) => {
                 if (e.target === this.botSettingsOverlay) {
                     this.hideBotSettings();
+                }
+            });
+        }
+        
+        if (this.tempKeyLoginSubmit) this.tempKeyLoginSubmit.addEventListener('click', () => this.loginWithTempKey());
+        if (this.generateTempKeyBtn) this.generateTempKeyBtn.addEventListener('click', () => this.generateTempKey());
+        if (this.tempKeyLoginOverlay) {
+            this.tempKeyLoginOverlay.addEventListener('click', (e) => {
+                if (e.target === this.tempKeyLoginOverlay) {
                 }
             });
         }
@@ -256,7 +250,18 @@ class QQBotManager {
         this.botList.appendChild(this.emptyState);
     }
 
-    updateConnectionStatus() {
+    updateConnectionStatus(authenticated = null) {
+        if (authenticated !== null) {
+            if (authenticated) {
+                this.connectionStatus.classList.add('online')
+                this.connectionStatus.querySelector('.status-text').textContent = '已登录'
+            } else {
+                this.connectionStatus.classList.remove('online')
+                this.connectionStatus.querySelector('.status-text').textContent = '未登录'
+            }
+            return
+        }
+        
         const hasOnline = this.bots.some(bot => bot.status === 'online');
         if (hasOnline) {
             this.connectionStatus.classList.add('online');
@@ -484,6 +489,7 @@ class QQBotManager {
                 document.getElementById('botSettingToBotUpload').checked = config.toBotUpload !== false;
                 document.getElementById('botSettingHideGuildRecall').checked = config.hideGuildRecall === true;
                 document.getElementById('botSettingImageLength').value = config.imageLength || 3;
+                document.getElementById('botSettingAutoConnect').checked = config.autoConnect !== false;
             }
         } catch (error) {
             console.error('加载机器人配置失败:', error);
@@ -541,7 +547,8 @@ class QQBotManager {
             toCallback: document.getElementById('botSettingToCallback').checked,
             toBotUpload: document.getElementById('botSettingToBotUpload').checked,
             hideGuildRecall: document.getElementById('botSettingHideGuildRecall').checked,
-            imageLength: parseFloat(document.getElementById('botSettingImageLength').value) || 3
+            imageLength: parseFloat(document.getElementById('botSettingImageLength').value) || 3,
+            autoConnect: document.getElementById('botSettingAutoConnect').checked
         };
 
         try {
@@ -550,6 +557,7 @@ class QQBotManager {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(config)
             });
+            
             if (response.success) {
                 this.toast('保存成功', 'success');
                 this.hideBotSettings();
@@ -562,19 +570,21 @@ class QQBotManager {
     }
 
     async fetch(url, options = {}) {
-        const apiKey = this.getApiKey();
         const headers = {
             'Content-Type': 'application/json',
             ...options.headers
         };
-        if (apiKey) {
-            headers['Authorization'] = `Bearer ${apiKey}`;
-        }
         
         const response = await fetch(API_BASE + url, {
             ...options,
-            headers
+            headers,
+            credentials: 'include'
         });
+        
+        if (response.status === 401 || response.status === 403) {
+            this.showLoginPrompt()
+            throw new Error('请先登录')
+        }
         
         if (!response.ok) {
             const errorText = await response.text().catch(() => 'Unknown error');
@@ -589,6 +599,131 @@ class QQBotManager {
         }
         
         return response.json();
+    }
+
+    async login(password) {
+        try {
+            const response = await fetch(API_BASE + '/api/qqbot/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password: password }),
+                credentials: 'include'
+            });
+            
+            const data = await response.json();
+            if (data.success) {
+                this.isAuthenticated = true
+                this.toast('登录成功', 'success')
+                this.loadBots()
+                return true
+            } else {
+                this.toast(data.message || '登录失败', 'error')
+                return false
+            }
+        } catch (error) {
+            this.toast('登录失败: ' + error.message, 'error')
+            return false
+        }
+    }
+
+    async logout() {
+        try {
+            await this.fetch('/api/qqbot/auth/logout', { method: 'POST' })
+            this.isAuthenticated = false
+            this.toast('已登出', 'info')
+            this.showLoginPrompt()
+        } catch (error) {
+            this.toast('登出失败: ' + error.message, 'error')
+        }
+    }
+
+    async checkAuth() {
+        try {
+            const response = await fetch(API_BASE + '/api/qqbot/auth/check', {
+                credentials: 'include'
+            })
+            const data = await response.json()
+            this.isAuthenticated = data.success && data.authenticated
+            if (this.isAuthenticated) {
+                this.updateConnectionStatus(true)
+            }
+            return this.isAuthenticated
+        } catch {
+            this.isAuthenticated = false
+            return false
+        }
+    }
+
+    showLoginPrompt() {
+        this.showTempKeyLoginModal()
+    }
+    
+    showTempKeyLoginModal() {
+        if (this.tempKeyLoginOverlay) {
+            this.tempKeyLoginOverlay.classList.add('show')
+            this.tempKeyInput.value = ''
+            if (this.tempKeyTip) {
+                this.tempKeyTip.style.display = 'none'
+            }
+        }
+    }
+    
+    hideTempKeyLoginModal() {
+        if (this.tempKeyLoginOverlay) {
+            this.tempKeyLoginOverlay.classList.remove('show')
+        }
+    }
+    
+    async generateTempKey() {
+        try {
+            const response = await fetch(API_BASE + '/api/qqbot/auth/temp-key', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({}),
+                credentials: 'include'
+            })
+            
+            const data = await response.json()
+            if (data.success) {
+                if (this.tempKeyTip) {
+                    this.tempKeyTip.style.display = 'block'
+                }
+                this.toast('临时Key已生成，请查看后台日志', 'success')
+            } else {
+                this.toast(data.message || '生成失败', 'error')
+            }
+        } catch (error) {
+            this.toast('生成失败: ' + error.message, 'error')
+        }
+    }
+    
+    async loginWithTempKey() {
+        const tempKey = this.tempKeyInput?.value?.trim()
+        if (!tempKey) {
+            this.toast('请输入临时Key', 'error')
+            return
+        }
+        
+        try {
+            const response = await fetch(API_BASE + '/api/qqbot/auth/temp-login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tempKey }),
+                credentials: 'include'
+            })
+            
+            const data = await response.json()
+            if (data.success) {
+                this.isAuthenticated = true
+                this.hideTempKeyLoginModal()
+                this.toast('登录成功', 'success')
+                this.loadBots()
+            } else {
+                this.toast(data.message || '登录失败', 'error')
+            }
+        } catch (error) {
+            this.toast('登录失败: ' + error.message, 'error')
+        }
     }
 
     toast(message, type = 'info') {

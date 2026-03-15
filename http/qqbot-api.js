@@ -2,9 +2,57 @@ import BotUtil from '../../../src/utils/botutil.js';
 import { HttpResponse } from '../../../src/utils/http-utils.js';
 import ConfigLoader from '../../../src/infrastructure/commonconfig/loader.js';
 import { Bot as QQBotSDK } from 'qq-group-bot';
+import crypto from 'crypto';
 
 const CONNECT_TEST_TIMEOUT = 15000
 const authorizedIPs = new Set()
+const SESSION_COOKIE_NAME = 'qqbot_session'
+const SESSION_EXPIRE_MS = 15 * 24 * 60 * 60 * 1000
+const sessions = new Map()
+const TEMP_KEY_EXPIRE_MS = 5 * 60 * 1000
+const tempKeys = new Map()
+
+const createSession = (ip) => {
+  const sessionId = crypto.randomBytes(32).toString('hex')
+  sessions.set(sessionId, {
+    ip,
+    createdAt: Date.now(),
+    expiresAt: Date.now() + SESSION_EXPIRE_MS
+  })
+  setTimeout(() => sessions.delete(sessionId), SESSION_EXPIRE_MS)
+  return sessionId
+}
+
+const validateSession = (sessionId, ip) => {
+  const session = sessions.get(sessionId)
+  if (!session) return false
+  if (Date.now() > session.expiresAt) {
+    sessions.delete(sessionId)
+    return false
+  }
+  return true
+}
+
+const createTempKey = () => {
+  const key = crypto.randomBytes(16).toString('hex')
+  tempKeys.set(key, {
+    createdAt: Date.now(),
+    expiresAt: Date.now() + TEMP_KEY_EXPIRE_MS
+  })
+  setTimeout(() => tempKeys.delete(key), TEMP_KEY_EXPIRE_MS)
+  return key
+}
+
+const validateTempKey = (key) => {
+  const tempKey = tempKeys.get(key)
+  if (!tempKey) return false
+  if (Date.now() > tempKey.expiresAt) {
+    tempKeys.delete(key)
+    return false
+  }
+  tempKeys.delete(key)
+  return true
+}
 
 const ensureAuthorized = (req, res, Bot) => {
   if (Bot.checkApiAuthorization?.(req)) {
@@ -15,7 +63,14 @@ const ensureAuthorized = (req, res, Bot) => {
     }
     return true
   }
+  
+  const sessionCookie = req.cookies?.[SESSION_COOKIE_NAME]
   const ip = req.ip || req.connection?.remoteAddress || 'unknown'
+  
+  if (sessionCookie && validateSession(sessionCookie, ip)) {
+    return true
+  }
+  
   BotUtil.makeLog('warn', `🔴 [密钥验证失败] IP: ${ip}`, 'QQBot')
   HttpResponse.forbidden(res, 'Unauthorized');
   return false;
@@ -51,6 +106,140 @@ export default {
   priority: 80,
 
   routes: [
+    {
+      method: 'POST',
+      path: '/api/qqbot/auth/temp-key',
+      handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
+        const ip = req.ip || req.connection?.remoteAddress || 'unknown'
+        
+        try {
+          const tempKey = createTempKey()
+          BotUtil.makeLog('mark', `🔑 [临时登录Key] ${tempKey} (有效期5分钟) IP: ${ip}`, 'QQBot')
+          HttpResponse.success(res, { 
+            message: '临时Key已生成，请查看后台日志'
+          })
+        } catch (err) {
+          BotUtil.makeLog('error', `生成临时Key异常: ${err.message}`, 'QQBot', err)
+          HttpResponse.error(res, err, 500, 'auth.temp-key')
+        }
+      }, 'qqbot.auth.temp-key')
+    },
+    
+    {
+      method: 'POST',
+      path: '/api/qqbot/auth/temp-login',
+      handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
+        const { tempKey } = req.body || {}
+        const ip = req.ip || req.connection?.remoteAddress || 'unknown'
+        
+        if (!tempKey) {
+          return HttpResponse.badRequest(res, '临时Key不能为空')
+        }
+        
+        if (!validateTempKey(tempKey)) {
+          BotUtil.makeLog('warn', `[临时Key登录失败] Key无效或已过期 IP: ${ip}`, 'QQBot')
+          return HttpResponse.forbidden(res, '临时Key无效或已过期')
+        }
+        
+        const sessionId = createSession(ip)
+        const isSecure = req.protocol === 'https' || req.secure
+        
+        res.cookie(SESSION_COOKIE_NAME, sessionId, {
+          httpOnly: true,
+          secure: isSecure,
+          sameSite: 'strict',
+          maxAge: SESSION_EXPIRE_MS / 1000,
+          path: '/'
+        })
+        
+        BotUtil.makeLog('info', `🟢 [临时Key登录成功] IP: ${ip}`, 'QQBot')
+        HttpResponse.success(res, { message: '登录成功' })
+      }, 'qqbot.auth.temp-login')
+    },
+    
+    {
+      method: 'POST',
+      path: '/api/qqbot/auth/login',
+      handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
+        const { password } = req.body || {}
+        const ip = req.ip || req.connection?.remoteAddress || 'unknown'
+        
+        if (!password) {
+          return HttpResponse.badRequest(res, '密码不能为空')
+        }
+        
+        const qqbotConfig = await ConfigLoader.get('qqbot')?.read() || {}
+        const adminPassword = qqbotConfig.adminPassword
+        
+        if (!adminPassword) {
+          BotUtil.makeLog('error', 'QQBot 管理密码未配置，请在 QQBot.json 中设置 adminPassword', 'QQBot')
+          return HttpResponse.error(res, null, 500, '管理密码未配置')
+        }
+        
+        try {
+          const inputBuffer = Buffer.from(String(password), 'utf8')
+          const storedBuffer = Buffer.from(String(adminPassword), 'utf8')
+          
+          if (inputBuffer.length !== storedBuffer.length) {
+            BotUtil.makeLog('warn', `[登录失败] 密码错误 IP: ${ip}`, 'QQBot')
+            return HttpResponse.forbidden(res, '密码错误')
+          }
+          
+          const valid = crypto.timingSafeEqual(inputBuffer, storedBuffer)
+          if (!valid) {
+            BotUtil.makeLog('warn', `[登录失败] 密码错误 IP: ${ip}`, 'QQBot')
+            return HttpResponse.forbidden(res, '密码错误')
+          }
+          
+          const sessionId = createSession(ip)
+          const isSecure = req.protocol === 'https' || req.secure
+          
+          res.cookie(SESSION_COOKIE_NAME, sessionId, {
+            httpOnly: true,
+            secure: isSecure,
+            sameSite: 'strict',
+            maxAge: SESSION_EXPIRE_MS / 1000,
+            path: '/'
+          })
+          
+          BotUtil.makeLog('info', `🟢 [登录成功] IP: ${ip}`, 'QQBot')
+          HttpResponse.success(res, { message: '登录成功' })
+        } catch (err) {
+          BotUtil.makeLog('error', `登录异常: ${err.message}`, 'QQBot', err)
+          HttpResponse.error(res, err, 500, 'auth.login')
+        }
+      }, 'qqbot.auth.login')
+    },
+    
+    {
+      method: 'POST',
+      path: '/api/qqbot/auth/logout',
+      handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
+        const ip = req.ip || req.connection?.remoteAddress || 'unknown'
+        const sessionCookie = req.cookies?.[SESSION_COOKIE_NAME]
+        
+        if (sessionCookie) {
+          sessions.delete(sessionCookie)
+        }
+        
+        res.clearCookie(SESSION_COOKIE_NAME, { path: '/' })
+        BotUtil.makeLog('info', `🔴 [登出成功] IP: ${ip}`, 'QQBot')
+        HttpResponse.success(res, { message: '登出成功' })
+      }, 'qqbot.auth.logout')
+    },
+    
+    {
+      method: 'GET',
+      path: '/api/qqbot/auth/check',
+      handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
+        const sessionCookie = req.cookies?.[SESSION_COOKIE_NAME]
+        const ip = req.ip || req.connection?.remoteAddress || 'unknown'
+        
+        const isValid = sessionCookie && validateSession(sessionCookie, ip)
+        HttpResponse.success(res, { authenticated: isValid })
+      }, 'qqbot.auth.check')
+    },
+    
     {
       method: 'GET',
       path: '/api/qqbot/status',
@@ -490,6 +679,7 @@ export default {
             maxRetry: data.bot?.maxRetry ?? 10,
             timeout: data.bot?.timeout ?? 30000,
             markdownSupport: account.markdownSupport ?? false,
+            autoConnect: account.autoConnect !== false,
             toQRCode: data.toQRCode ?? true,
             toCallback: data.toCallback ?? true,
             toBotUpload: data.toBotUpload ?? true,
@@ -536,6 +726,9 @@ export default {
         }
         if (body.markdownSupport !== undefined) {
           data.accounts[accountIndex].markdownSupport = body.markdownSupport
+        }
+        if (body.autoConnect !== undefined) {
+          data.accounts[accountIndex].autoConnect = body.autoConnect
         }
         if (body.toQRCode !== undefined) {
           data.toQRCode = body.toQRCode

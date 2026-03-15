@@ -1,6 +1,7 @@
 import { Bot as QQBotSDK } from "qq-group-bot"
 import ConfigLoader from "../../../src/infrastructure/commonconfig/loader.js"
 import BotUtil from "../../../src/utils/botutil.js"
+import cfg from "../../../src/infrastructure/config/config.js"
 import { MessageBuilder } from "./message-builder.js"
 import { MessageHandler } from "./message-handler.js"
 
@@ -38,11 +39,40 @@ Bot.tasker.push(
         await this.loadSharp()
         this.printWebUrl()
         this.initMessageModules()
-        await this.setupBots()
         this.setupWebHook()
+        this.scheduleBotConnection()
         Bot.makeLog('mark', `${this.name}(${this.id}) ${this.version} 加载完成`, 'QQBot')
       } catch (err) {
         Bot.makeLog('error', `QQBot加载失败: ${err.message}`, 'QQBot', err)
+      }
+    }
+
+    scheduleBotConnection() {
+      const doConnect = async () => {
+        try {
+          await this.setupBots()
+        } catch (err) {
+          Bot.makeLog('error', `QQBot 连接失败: ${err.message}`, 'QQBot')
+        }
+      }
+      
+      const timeout = 30000
+      const timer = setTimeout(() => {
+        Bot.makeLog('warn', `等待框架启动超时 (${timeout}ms)，尝试连接 QQBot`, 'QQBot')
+        doConnect()
+      }, timeout)
+      
+      const onOnline = () => {
+        clearTimeout(timer)
+        Bot.makeLog('debug', '框架启动完成，开始连接 QQBot', 'QQBot')
+        doConnect()
+      }
+      
+      if (Bot._online) {
+        clearTimeout(timer)
+        onOnline()
+      } else {
+        Bot.once('online', onOnline)
       }
     }
 
@@ -51,6 +81,23 @@ Bot.tasker.push(
       const list = Array.isArray(masterQQ) ? masterQQ : [masterQQ]
       BotUtil.master = list.map(m => String(m))
       Bot.makeLog('debug', `QQBot 主人列表已加载: ${BotUtil.master.length} 个`, 'QQBot')
+    }
+
+    async updateBotName(appId, nickname) {
+      if (!nickname || nickname === appId) return
+      try {
+        const configInstance = ConfigLoader.get('qqbot')
+        if (!configInstance) return
+        const data = await configInstance.read()
+        const account = (data.accounts || []).find(a => a.appId === appId)
+        if (account && account.name !== nickname) {
+          account.name = nickname
+          await configInstance.write(data)
+          Bot.makeLog('debug', `QQBot 配置已更新: ${appId} -> ${nickname}`, 'QQBot')
+        }
+      } catch (err) {
+        Bot.makeLog('error', `更新机器人名称失败: ${err.message}`, 'QQBot', err)
+      }
     }
 
     initMessageModules() {
@@ -94,9 +141,18 @@ Bot.tasker.push(
 
     async setupBots() {
       const accounts = this.config.accounts || []
+      
       for (const account of accounts) {
         if (account.enabled !== false && account.appId && account.clientSecret) {
-          await this.connect(account)
+          if (account.autoConnect === false) {
+            Bot.makeLog('info', `QQBot ${account.appId || account.name} 自动连接已禁用，跳过`, 'QQBot')
+            continue
+          }
+          try {
+            await this.connect(account)
+          } catch (err) {
+            Bot.makeLog('error', `QQBot ${account.appId} 连接失败: ${err.message}`, 'QQBot')
+          }
         }
       }
     }
@@ -151,24 +207,13 @@ Bot.tasker.push(
         sdk,
         login() {
           return new Promise((resolve, reject) => {
-            const timer = setTimeout(() => {
-              reject(new Error(`连接超时 (${timeout}ms)`))
-            }, timeout)
-            
-            this.sdk.sessionManager.once("READY", () => {
-              clearTimeout(timer)
-              resolve()
-            })
-            
+            this.sdk.sessionManager.once("READY", resolve)
             this.sdk.sessionManager.once("DEAD", (err) => {
-              clearTimeout(timer)
               reject(new Error(err?.msg || "连接失败"))
             })
-            
             try {
               this.sdk.start()
             } catch (err) {
-              clearTimeout(timer)
               reject(err)
             }
           })
@@ -217,6 +262,9 @@ Bot.tasker.push(
             Bot.makeLog('debug', `连接会话过期，正在重连...`, id)
             return
           }
+          if (msg?.includes?.("[CLIENT]") || msg?.includes?.("connect to") || msg?.includes?.("鉴权")) {
+            return Bot.makeLog(i, args, 'QQBot')
+          }
           return Bot.makeLog(i, args, id)
         }
       }
@@ -236,6 +284,7 @@ Bot.tasker.push(
       try {
         await Bot[id].login()
         Object.assign(Bot[id].info, await Bot[id].sdk.getSelfInfo())
+        await this.updateBotName(account.appId, Bot[id].nickname)
       } catch (err) {
         Bot.makeLog('error', `${this.name}(${this.id}) ${this.version} 连接失败: ${err.message}`, id, err)
         try {

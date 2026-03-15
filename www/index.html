@@ -3,6 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+    <meta name="googlebot" content="noindex, nofollow">
     <title>QQBot 管理</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234a90d9' stroke-width='2'><circle cx='12' cy='12' r='10'/><path d='M8 14s1.5 2 4 2 4-2 4-2'/><circle cx='9' cy='9' r='1' fill='%234a90d9'/><circle cx='15' cy='9' r='1' fill='%234a90d9'/></svg>">
     <link rel="stylesheet" href="styles.css">
@@ -20,10 +22,6 @@
                 <span class="brand-name">QQBot 管理</span>
             </div>
             <div class="header-actions">
-                <div class="api-key-box">
-                    <input type="password" class="api-key-input" id="apiKey" placeholder="API Key">
-                    <button class="btn btn-sm btn-primary" id="saveApiKeyBtn">保存</button>
-                </div>
                 <div class="header-status" id="connectionStatus">
                     <span class="status-dot"></span>
                     <span class="status-text">未连接</span>
@@ -138,6 +136,16 @@
                     <h3 class="settings-section-title">Bot配置</h3>
                     <div class="form-group">
                         <label class="form-label">
+                            <span>自动连接</span>
+                            <span class="form-label-hint">框架启动时自动连接机器人</span>
+                        </label>
+                        <label class="switch">
+                            <input type="checkbox" id="botSettingAutoConnect" checked>
+                            <span class="switch-slider"></span>
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">
                             <span>沙箱模式</span>
                             <span class="form-label-hint">是否启用沙箱环境</span>
                         </label>
@@ -223,6 +231,33 @@
                 <button class="btn btn-secondary" id="botSettingsCancel">取消</button>
                 <button class="btn btn-primary" id="botSettingsSave">
                     <span class="btn-text">保存设置</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="tempKeyLoginOverlay">
+        <div class="modal modal-sm">
+            <div class="modal-header">
+                <h2 class="modal-title">QQBot 管理登录</h2>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label" for="tempKeyInput">临时Key</label>
+                    <input type="text" class="form-input" id="tempKeyInput" placeholder="请输入临时Key">
+                </div>
+                <div class="form-hint" style="margin-top: 8px;">
+                    <span>没有临时Key？</span>
+                    <button class="btn btn-link" id="generateTempKeyBtn">点击获取</button>
+                </div>
+                <div class="temp-key-tip" id="tempKeyTip" style="display: none; margin-top: 12px;">
+                    <p>临时Key已生成，请查看后台日志获取</p>
+                    <p class="temp-key-tip-sub">有效期5分钟</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" id="tempKeyLoginSubmit" style="width: 100%;">
+                    <span class="btn-text">登录</span>
                 </button>
             </div>
         </div>
