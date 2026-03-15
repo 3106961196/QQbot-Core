@@ -262,6 +262,12 @@ class QQBotManager {
             return
         }
         
+        if (this.isAuthenticated) {
+            this.connectionStatus.classList.add('online')
+            this.connectionStatus.querySelector('.status-text').textContent = '已登录'
+            return
+        }
+        
         const hasOnline = this.bots.some(bot => bot.status === 'online');
         if (hasOnline) {
             this.connectionStatus.classList.add('online');
@@ -716,6 +722,7 @@ class QQBotManager {
             if (data.success) {
                 this.isAuthenticated = true
                 this.hideTempKeyLoginModal()
+                this.updateConnectionStatus(true)
                 this.toast('登录成功', 'success')
                 this.loadBots()
             } else {

@@ -12,6 +12,20 @@ const sessions = new Map()
 const TEMP_KEY_EXPIRE_MS = 5 * 60 * 1000
 const tempKeys = new Map()
 
+const parseCookies = (req) => {
+  const cookieHeader = req.headers?.cookie
+  if (!cookieHeader) return {}
+  
+  const cookies = {}
+  cookieHeader.split(';').forEach(cookie => {
+    const [name, ...rest] = cookie.trim().split('=')
+    if (name && rest.length > 0) {
+      cookies[name] = rest.join('=')
+    }
+  })
+  return cookies
+}
+
 const createSession = (ip) => {
   const sessionId = crypto.randomBytes(32).toString('hex')
   sessions.set(sessionId, {
@@ -64,7 +78,8 @@ const ensureAuthorized = (req, res, Bot) => {
     return true
   }
   
-  const sessionCookie = req.cookies?.[SESSION_COOKIE_NAME]
+  const cookies = parseCookies(req)
+  const sessionCookie = cookies[SESSION_COOKIE_NAME]
   const ip = req.ip || req.connection?.remoteAddress || 'unknown'
   
   if (sessionCookie && validateSession(sessionCookie, ip)) {
@@ -144,13 +159,16 @@ export default {
         const sessionId = createSession(ip)
         const isSecure = req.protocol === 'https' || req.secure
         
-        res.cookie(SESSION_COOKIE_NAME, sessionId, {
-          httpOnly: true,
-          secure: isSecure,
-          sameSite: 'strict',
-          maxAge: SESSION_EXPIRE_MS / 1000,
-          path: '/'
-        })
+        const cookieValue = [
+          `${SESSION_COOKIE_NAME}=${sessionId}`,
+          'Path=/',
+          `Max-Age=${SESSION_EXPIRE_MS / 1000}`,
+          'HttpOnly',
+          'SameSite=Strict',
+          isSecure ? 'Secure' : ''
+        ].filter(Boolean).join('; ')
+        
+        res.setHeader('Set-Cookie', cookieValue)
         
         BotUtil.makeLog('info', `🟢 [临时Key登录成功] IP: ${ip}`, 'QQBot')
         HttpResponse.success(res, { message: '登录成功' })
@@ -194,13 +212,16 @@ export default {
           const sessionId = createSession(ip)
           const isSecure = req.protocol === 'https' || req.secure
           
-          res.cookie(SESSION_COOKIE_NAME, sessionId, {
-            httpOnly: true,
-            secure: isSecure,
-            sameSite: 'strict',
-            maxAge: SESSION_EXPIRE_MS / 1000,
-            path: '/'
-          })
+          const cookieValue = [
+            `${SESSION_COOKIE_NAME}=${sessionId}`,
+            'Path=/',
+            `Max-Age=${SESSION_EXPIRE_MS / 1000}`,
+            'HttpOnly',
+            'SameSite=Strict',
+            isSecure ? 'Secure' : ''
+          ].filter(Boolean).join('; ')
+          
+          res.setHeader('Set-Cookie', cookieValue)
           
           BotUtil.makeLog('info', `🟢 [登录成功] IP: ${ip}`, 'QQBot')
           HttpResponse.success(res, { message: '登录成功' })
@@ -216,13 +237,14 @@ export default {
       path: '/api/qqbot/auth/logout',
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
         const ip = req.ip || req.connection?.remoteAddress || 'unknown'
-        const sessionCookie = req.cookies?.[SESSION_COOKIE_NAME]
+        const cookies = parseCookies(req)
+        const sessionCookie = cookies[SESSION_COOKIE_NAME]
         
         if (sessionCookie) {
           sessions.delete(sessionCookie)
         }
         
-        res.clearCookie(SESSION_COOKIE_NAME, { path: '/' })
+        res.setHeader('Set-Cookie', `${SESSION_COOKIE_NAME}=; Path=/; Max-Age=0; HttpOnly`)
         BotUtil.makeLog('info', `🔴 [登出成功] IP: ${ip}`, 'QQBot')
         HttpResponse.success(res, { message: '登出成功' })
       }, 'qqbot.auth.logout')
@@ -232,7 +254,8 @@ export default {
       method: 'GET',
       path: '/api/qqbot/auth/check',
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
-        const sessionCookie = req.cookies?.[SESSION_COOKIE_NAME]
+        const cookies = parseCookies(req)
+        const sessionCookie = cookies[SESSION_COOKIE_NAME]
         const ip = req.ip || req.connection?.remoteAddress || 'unknown'
         
         const isValid = sessionCookie && validateSession(sessionCookie, ip)
