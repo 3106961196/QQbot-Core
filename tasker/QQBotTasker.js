@@ -34,7 +34,6 @@ Bot.tasker.push(
     async load() {
       try {
         await this.loadConfig()
-        this.loadMasters()
         this.setupQRCodeRegex()
         await this.loadSharp()
         this.printWebUrl()
@@ -65,11 +64,13 @@ Bot.tasker.push(
       const onOnline = () => {
         clearTimeout(timer)
         Bot.makeLog('debug', '框架启动完成，开始连接 QQBot', 'QQBot')
+        this.loadMasters()
         doConnect()
       }
       
       if (Bot._online) {
         clearTimeout(timer)
+        this.loadMasters()
         onOnline()
       } else {
         Bot.once('online', onOnline)
@@ -77,6 +78,10 @@ Bot.tasker.push(
     }
 
     loadMasters() {
+      if (!BotUtil.apiKey) {
+        Bot.makeLog('debug', 'QQBot 等待框架初始化完成后再加载主人列表', 'QQBot')
+        return
+      }
       const masterQQ = cfg.chatbot?.master?.qq || []
       const list = Array.isArray(masterQQ) ? masterQQ : [masterQQ]
       BotUtil.master = list.map(m => String(m))

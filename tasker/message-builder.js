@@ -3,15 +3,33 @@ import { ulid } from "ulid"
 import QRCode from "qrcode"
 import imageSize from "image-size"
 import urlRegexSafe from "url-regex-safe"
-import { encode as encodeSilk, isSilk } from "silk-wasm"
 
 export class MessageBuilder {
   constructor(tasker) {
-    this.tasker = tasker
-    this.config = tasker.config
-    this.toQRCodeRegExp = tasker.toQRCodeRegExp
-    this.sharp = tasker.sharp
-    this.sep = tasker.sep
+    // 不保存 tasker 引用，避免循环引用
+    this._config = tasker.config
+    this._toQRCodeRegExp = tasker.toQRCodeRegExp
+    this._sharp = tasker.sharp
+    this._sep = tasker.sep
+    this._bots = tasker.bots
+    this.silkWasm = null
+  }
+
+  get config() { return this._config }
+  get toQRCodeRegExp() { return this._toQRCodeRegExp }
+  get sharp() { return this._sharp }
+  get sep() { return this._sep }
+  get bots() { return this._bots }
+
+  async initSilkWasm() {
+    if (!this.silkWasm) {
+      const module = await import("silk-wasm")
+      this.silkWasm = {
+        encode: module.encode,
+        isSilk: module.isSilk
+      }
+    }
+    return this.silkWasm
   }
 
   makeLog(msg) {
@@ -19,8 +37,8 @@ export class MessageBuilder {
   }
 
   async makeRecord(file) {
-    if (this.config.toBotUpload) {
-      for (const [id, bot] of this.tasker.bots) {
+    if (this.config?.toBotUpload) {
+      for (const [id, bot] of this.bots) {
         if (bot.sdk.uploadRecord) {
           try {
             const url = await bot.sdk.uploadRecord(file)
@@ -34,6 +52,8 @@ export class MessageBuilder {
 
     const buffer = await Bot.Buffer(file)
     if (!Buffer.isBuffer(buffer)) return file
+    
+    const { isSilk, encode: encodeSilk } = await this.initSilkWasm()
     if (isSilk(buffer)) return buffer
 
     const convFile = path.join("temp", ulid())
@@ -61,8 +81,8 @@ export class MessageBuilder {
   }
 
   async makeBotImage(file) {
-    if (this.config.toBotUpload) {
-      for (const [id, bot] of this.tasker.bots) {
+    if (this.config?.toBotUpload) {
+      for (const [id, bot] of this.bots) {
         if (bot.sdk.uploadImage) {
           try {
             const image = await bot.sdk.uploadImage(file)
@@ -98,7 +118,7 @@ export class MessageBuilder {
   async compressImage(data, file) {
     if (!this.sharp) return file
     try {
-      const size = this.config.imageLength * 1024 * 1024
+      const size = this.config?.imageLength * 1024 * 1024
       const buffer = await Bot.Buffer(file, { http: true })
 
       if (!Buffer.isBuffer(buffer)) return file
@@ -138,7 +158,7 @@ export class MessageBuilder {
         ...button.QQBot?.action,
       }
     } else if (button.callback) {
-      if (this.config.toCallback) {
+      if (this.config?.toCallback) {
         msg.action = {
           type: 1,
           permission: { type: 2 },
@@ -329,13 +349,13 @@ export class MessageBuilder {
       const params = []
       for (const i in template) {
         params.push({
-          key: this.config.markdown.template[i],
+          key: this.config?.markdown?.template?.[i],
           values: [template[i]],
         })
       }
       msgs.push([{
         type: "markdown",
-        custom_template_id: this.config.markdown[data.self_id],
+        custom_template_id: this.config?.markdown?.[data.self_id],
         params,
       }])
     }
@@ -344,7 +364,7 @@ export class MessageBuilder {
 
   makeMarkdownTemplatePush(content, template, templates) {
     for (const i of content) {
-      if (template.length === this.config.markdown.template.length - 1) {
+      if (template.length === (this.config?.markdown?.template?.length || 0) - 1) {
         template.push(i.shift())
         template = i
         templates.push(template)

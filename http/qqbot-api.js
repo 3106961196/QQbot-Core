@@ -87,8 +87,8 @@ const ensureAuthorized = (req, res, Bot) => {
   }
   
   BotUtil.makeLog('warn', `🔴 [密钥验证失败] IP: ${ip}`, 'QQBot')
-  HttpResponse.forbidden(res, 'Unauthorized');
-  return false;
+  HttpResponse.forbidden(res, 'Unauthorized')
+  return false
 };
 
 const logWebAccess = (req, Bot, action = '访问') => {

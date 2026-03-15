@@ -1,10 +1,15 @@
 export class MessageHandler {
   constructor(tasker) {
-    this.tasker = tasker
-    this.config = tasker.config
-    this.sep = tasker.sep
+    // 不保存 tasker 引用
+    this._config = tasker.config
+    this._sep = tasker.sep
+    this._bind_user = tasker.bind_user
     this.messageBuilder = null
   }
+
+  get config() { return this._config }
+  get sep() { return this._sep }
+  get bind_user() { return this._bind_user }
 
   setMessageBuilder(builder) {
     this.messageBuilder = builder
@@ -396,7 +401,7 @@ export class MessageHandler {
         Bot[id].callback[data.user_id] = true
         let msg = `请先发送 #QQBot绑定用户${data.user_id}`
         const real_id = callback.message.replace(/^#[Qq]+[Bb]ot绑定用户确认/, "").trim()
-        if (this.tasker.bind_user[real_id] === data.user_id) {
+        if (this.bind_user[real_id] === data.user_id) {
           await Bot[id].fl.set(data.user_id, { ...Bot[id].fl.get(data.user_id), real_id })
           msg = `绑定成功 ${data.user_id} → ${real_id}`
         }
