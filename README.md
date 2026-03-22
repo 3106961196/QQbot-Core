@@ -2,12 +2,12 @@
 
 # 🤖 QQBot-Core
 
-**XRK-AGT 的 QQ 官方机器人通道：基于** **[qq-group-bot](https://github.com/Nicexw/qc-native-sdk)** **SDK，支持群消息、频道消息、私聊消息等多种消息类型的收发，事件与框架标准对齐，经** **`e.reply`** **进入插件。**
+**XRK-AGT 的 QQ 官方机器人通道：基于 [qq-group-bot](https://github.com/Nicexw/qc-native-sdk) SDK，支持群消息、频道消息、私聊消息等多种消息类型的收发，事件与框架标准对齐，经 `e.reply` 进入插件。**
 
-[!\[XRK-AGT\](https://img.shields.io/badge/XRK--AGT-runtime-blue.svg null)](https://github.com/sunflowermm/XRK-AGT)
-[!\[QQ Open\](https://img.shields.io/badge/QQ%20Open-open.qq.com-12B7F5.svg null)](https://q.qq.com/)
-[!\[SDK\](https://img.shields.io/badge/SDK-qq--group--bot-333.svg null)](https://www.npmjs.com/package/qq-group-bot)
-[!\[License\](https://img.shields.io/badge/License-MIT-green.svg null)](./LICENSE)
+[![XRK-AGT](https://img.shields.io/badge/XRK--AGT-runtime-blue.svg)](https://github.com/sunflowermm/XRK-AGT)
+[![QQ Open](https://img.shields.io/badge/QQ%20Open-open.qq.com-12B7F5.svg)](https://q.qq.com/)
+[![SDK](https://img.shields.io/badge/SDK-qq--group--bot-333.svg)](https://www.npmjs.com/package/qq-group-bot)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
 
 </div>
 
