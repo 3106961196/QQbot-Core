@@ -51,6 +51,7 @@ class QQBotManager {
         this.tempKeyLoginSubmit = document.getElementById('tempKeyLoginSubmit');
         this.generateTempKeyBtn = document.getElementById('generateTempKeyBtn');
         this.tempKeyTip = document.getElementById('tempKeyTip');
+        this.tempKeyHint = document.querySelector('#tempKeyLoginOverlay .form-hint');
         
         this.settingsOverlay = document.getElementById('settingsOverlay');
         this.settingToQRCode = document.getElementById('settingToQRCode');
@@ -694,6 +695,9 @@ class QQBotManager {
                 if (this.tempKeyTip) {
                     this.tempKeyTip.style.display = 'block'
                 }
+                if (this.tempKeyHint) {
+                    this.tempKeyHint.style.display = 'none'
+                }
                 this.toast('临时Key已生成，请查看后台日志', 'success')
             } else {
                 this.toast(data.message || '生成失败', 'error')
@@ -750,10 +754,11 @@ class QQBotManager {
 
         this.toastContainer.appendChild(toast);
 
+        const duration = type === 'error' ? 10000 : 5000;
         setTimeout(() => {
             toast.classList.add('hide');
             setTimeout(() => toast.remove(), 300);
-        }, 3000);
+        }, duration);
     }
 
     formatTime(timestamp) {

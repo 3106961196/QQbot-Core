@@ -36,7 +36,6 @@ Bot.tasker.push(
         await this.loadConfig()
         this.setupQRCodeRegex()
         await this.loadSharp()
-        this.printWebUrl()
         this.initMessageModules()
         this.setupWebHook()
         this.scheduleBotConnection()
@@ -117,7 +116,13 @@ Bot.tasker.push(
       const displayHost = host.replace(/^https?:\/\//, '').replace(/:\d+.*$/, '')
       const displayPort = (port === 80 || port === 443) ? '' : `:${port}`
       const protocol = port === Bot.actualHttpsPort ? 'https' : 'http'
-      Bot.makeLog('mark', `QQBot 管理界面: ${protocol}://${displayHost}${displayPort}/core/QQbot-Core/`, 'QQBot')
+      const url = `${protocol}://${displayHost}${displayPort}/core/QQbot-Core/`
+      const content = `QQBot 管理界面: ${url}`
+      const displayWidth = [...content].reduce((w, c) => w + (c.charCodeAt(0) > 127 ? 2 : 1), 0) + 2
+      const line = '─'.repeat(displayWidth)
+      Bot.makeLog('mark', `┌${line}┐`, 'QQBot')
+      Bot.makeLog('mark', `│ ${content} │`, 'QQBot')
+      Bot.makeLog('mark', `└${line}┘`, 'QQBot')
     }
 
     setupQRCodeRegex() {
@@ -145,6 +150,7 @@ Bot.tasker.push(
     }
 
     async setupBots() {
+      this.printWebUrl()
       const accounts = this.config.accounts || []
       
       for (const account of accounts) {
@@ -206,28 +212,78 @@ Bot.tasker.push(
       }
 
       const sdk = new QQBotSDK(opts)
-
+      
+      const safeGetWsUrl = () => {
+        return new Promise((resolve, reject) => {
+          sdk.request.get("/gateway/bot", {
+            headers: {
+              Accept: "*/*",
+              "Accept-Encoding": "utf-8",
+              "Accept-Language": "zh-CN,zh;q=0.8",
+              Connection: "keep-alive",
+              "User-Agent": "v1",
+              Authorization: ""
+            }
+          }).then(res => {
+            if (!res.data) {
+              reject(new Error("获取ws连接信息异常"))
+              return
+            }
+            sdk.sessionManager.wsUrl = res.data.url
+            resolve(res.data.url)
+          }).catch(err => {
+            reject(err)
+          })
+        })
+      }
+      
       Bot[id] = {
         tasker: this,
         sdk,
+        loginError: null,
         login() {
           return new Promise((resolve, reject) => {
-            this.sdk.sessionManager.once("READY", resolve)
-            this.sdk.sessionManager.once("DEAD", (err) => {
-              reject(new Error(err?.msg || "连接失败"))
-            })
-            try {
-              this.sdk.start()
-            } catch (err) {
-              reject(err)
+            const timeout = setTimeout(() => {
+              reject(new Error('连接超时'))
+            }, 30000)
+            
+            const onReady = () => {
+              clearTimeout(timeout)
+              this.sdk.sessionManager.off("DEAD", onDead)
+              resolve()
             }
+            
+            const onDead = (err) => {
+              clearTimeout(timeout)
+              this.sdk.sessionManager.off("READY", onReady)
+              const errorMsg = err?.msg || "连接失败"
+              this.loginError = errorMsg
+              reject(new Error(errorMsg))
+            }
+            
+            this.sdk.sessionManager.once("READY", onReady)
+            this.sdk.sessionManager.once("DEAD", onDead)
+            
+            ;(async () => {
+              try {
+                await this.sdk.sessionManager.getAccessToken()
+                await safeGetWsUrl()
+                this.sdk.sessionManager.connect()
+                this.sdk.sessionManager.startListen()
+              } catch (err) {
+                clearTimeout(timeout)
+                this.loginError = err?.message || '连接失败'
+                reject(err)
+              }
+            })()
           })
         },
         _cleanup() {},
         logout() {
           return new Promise(resolve => {
-            this.sdk.ws.once("close", resolve)
+            this.sdk.ws?.once?.("close", resolve)
             this.sdk.stop()
+            resolve()
           })
         },
         uin: id,
@@ -267,6 +323,10 @@ Bot.tasker.push(
             Bot.makeLog('debug', `连接会话过期，正在重连...`, id)
             return
           }
+          if (msg?.includes?.("11298") || msg?.includes?.("IP不在白名单")) {
+            Bot.makeLog('error', `连接失败: IP 不在白名单，请在 QQ 开放平台添加服务器 IP 到白名单`, 'QQBot')
+            return
+          }
           if (msg?.includes?.("[CLIENT]") || msg?.includes?.("connect to") || msg?.includes?.("鉴权")) {
             return Bot.makeLog(i, args, 'QQBot')
           }
@@ -276,8 +336,12 @@ Bot.tasker.push(
 
       Bot[id].sdk.sessionManager.on("DEAD", (data) => {
         const errorMsg = data.msg || '连接断开'
-        Bot.makeLog('info', `🔴 [设备下线] QQBot (${Bot[id]?.nickname || id}) - 原因: ${errorMsg}`, 'QQBot')
-        Bot.makeLog('warn', `QQBot 连接断开: ${errorMsg}`, id)
+        if (errorMsg.includes('11298') || errorMsg.includes('IP不在白名单')) {
+          Bot.makeLog('error', `🔴 [连接失败] QQBot (${id}) - IP 不在白名单，请在 QQ 开放平台添加服务器公网 IP 到白名单`, 'QQBot')
+        } else {
+          Bot.makeLog('info', `🔴 [设备下线] QQBot (${Bot[id]?.nickname || id}) - 原因: ${errorMsg}`, 'QQBot')
+          Bot.makeLog('warn', `QQBot 连接断开: ${errorMsg}`, id)
+        }
         this.bots.delete(id)
         if (Bot[id]) {
           delete Bot[id]
@@ -286,11 +350,13 @@ Bot.tasker.push(
         Bot.em(`disconnect.${id}`, { self_id: id, reason: errorMsg })
       })
 
+      let loginError = null
       try {
         await Bot[id].login()
         Object.assign(Bot[id].info, await Bot[id].sdk.getSelfInfo())
         await this.updateBotName(account.appId, Bot[id].nickname)
       } catch (err) {
+        loginError = err
         Bot.makeLog('error', `${this.name}(${this.id}) ${this.version} 连接失败: ${err.message}`, id, err)
         try {
           Bot[id]._cleanup?.()
@@ -300,7 +366,16 @@ Bot.tasker.push(
         }
         delete Bot[id]
         Bot.uin = Bot.uin.filter(u => u !== id)
-        return false
+      }
+
+      if (loginError) {
+        const errorMsg = loginError.message || '连接失败'
+        if (errorMsg.includes('11298') || errorMsg.includes('IP不在白名单')) {
+          const ipWhitelistError = new Error('IP 不在白名单，请在 QQ 开放平台添加服务器公网 IP 到白名单')
+          ipWhitelistError.code = 'IP_WHITELIST'
+          throw ipWhitelistError
+        }
+        throw loginError
       }
 
       Bot[id].sdk.on("message", event => this.messageHandler.makeMessage(id, event))

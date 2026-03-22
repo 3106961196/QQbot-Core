@@ -570,12 +570,16 @@ export default {
           await tasker.disconnect(botId);
         }
         
-        const success = await tasker.connect(account);
-        
-        if (success) {
-          HttpResponse.success(res, null, '重连成功');
-        } else {
-          HttpResponse.error(res, new Error('重连失败'), 400, 'qqbot.reconnect');
+        try {
+          const success = await tasker.connect(account);
+          if (success) {
+            HttpResponse.success(res, null, '重连成功');
+          } else {
+            HttpResponse.error(res, new Error('重连失败'), 400, 'qqbot.reconnect');
+          }
+        } catch (err) {
+          BotUtil.makeLog('error', `QQBot重连失败: ${err.message}`, 'QQBotAPI', err);
+          HttpResponse.error(res, err, 400, 'qqbot.reconnect');
         }
       }, 'qqbot.reconnect')
     },
