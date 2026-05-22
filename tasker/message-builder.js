@@ -5,21 +5,18 @@ import imageSize from "image-size"
 import urlRegexSafe from "url-regex-safe"
 
 export class MessageBuilder {
+  static MAX_CALLBACKS = 1000
+
   constructor(tasker) {
-    // 不保存 tasker 引用，避免循环引用
-    this._config = tasker.config
-    this._toQRCodeRegExp = tasker.toQRCodeRegExp
-    this._sharp = tasker.sharp
-    this._sep = tasker.sep
-    this._bots = tasker.bots
+    this._tasker = tasker
     this.silkWasm = null
   }
 
-  get config() { return this._config }
-  get toQRCodeRegExp() { return this._toQRCodeRegExp }
-  get sharp() { return this._sharp }
-  get sep() { return this._sep }
-  get bots() { return this._bots }
+  get config() { return this._tasker.config }
+  get toQRCodeRegExp() { return this._tasker.toQRCodeRegExp }
+  get sharp() { return this._tasker.sharp }
+  get sep() { return this._tasker.sep }
+  get bots() { return this._tasker.bots }
 
   async initSilkWasm() {
     if (!this.silkWasm) {
@@ -165,6 +162,11 @@ export class MessageBuilder {
           ...button.QQBot?.action,
         }
         if (!Array.isArray(data._ret_id)) data._ret_id = []
+        // 容量保护：超过上限时清理最旧的条目
+        const callbackKeys = Object.keys(data.bot.callback)
+        if (callbackKeys.length >= MessageBuilder.MAX_CALLBACKS) {
+          delete data.bot.callback[callbackKeys[0]]
+        }
         data.bot.callback[msg.id] = {
           id: data.message_id,
           user_id: data.user_id,

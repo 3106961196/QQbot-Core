@@ -5,12 +5,26 @@ import { Bot as QQBotSDK } from 'qq-group-bot';
 import crypto from 'crypto';
 
 const CONNECT_TEST_TIMEOUT = 15000
-const authorizedIPs = new Set()
 const SESSION_COOKIE_NAME = 'qqbot_session'
 const SESSION_EXPIRE_MS = 15 * 24 * 60 * 60 * 1000
 const sessions = new Map()
 const TEMP_KEY_EXPIRE_MS = 5 * 60 * 1000
 const tempKeys = new Map()
+
+// 临时Key频率限制：每个IP每分钟最多3次
+const TEMP_KEY_RATE_LIMIT = 3
+const TEMP_KEY_RATE_WINDOW = 60 * 1000
+const tempKeyRateLimit = new Map()
+
+// 每10分钟清理过期的频率限制记录
+setInterval(() => {
+  const now = Date.now()
+  for (const [ip, record] of tempKeyRateLimit) {
+    if (now - record.windowStart > TEMP_KEY_RATE_WINDOW) {
+      tempKeyRateLimit.delete(ip)
+    }
+  }
+}, 10 * 60 * 1000)
 
 const parseCookies = (req) => {
   const cookieHeader = req.headers?.cookie
@@ -44,6 +58,10 @@ const validateSession = (sessionId, ip) => {
     sessions.delete(sessionId)
     return false
   }
+  if (session.ip && session.ip !== ip) {
+    BotUtil.makeLog('warn', `🔴 [Session IP不匹配] 创建IP: ${session.ip} 请求IP: ${ip}`, 'QQBot')
+    return false
+  }
   return true
 }
 
@@ -68,24 +86,33 @@ const validateTempKey = (key) => {
   return true
 }
 
-const ensureAuthorized = (req, res, Bot) => {
-  if (Bot.checkApiAuthorization?.(req)) {
-    const ip = req.ip || req.connection?.remoteAddress || 'unknown'
-    if (!authorizedIPs.has(ip)) {
-      authorizedIPs.add(ip)
-      BotUtil.makeLog('info', `🟢 [Web登录] QQBot管理后台 - IP: ${ip}`, 'QQBot')
-    }
-    return true
+const checkTempKeyRateLimit = (ip) => {
+  const now = Date.now()
+  const record = tempKeyRateLimit.get(ip)
+
+  if (!record || now - record.windowStart > TEMP_KEY_RATE_WINDOW) {
+    tempKeyRateLimit.set(ip, { windowStart: now, count: 1 })
+    return { allowed: true, remaining: TEMP_KEY_RATE_LIMIT - 1 }
   }
-  
+
+  if (record.count >= TEMP_KEY_RATE_LIMIT) {
+    const retryAfter = Math.ceil((TEMP_KEY_RATE_WINDOW - (now - record.windowStart)) / 1000)
+    return { allowed: false, retryAfter }
+  }
+
+  record.count++
+  return { allowed: true, remaining: TEMP_KEY_RATE_LIMIT - record.count }
+}
+
+const ensureAuthorized = (req, res) => {
   const cookies = parseCookies(req)
   const sessionCookie = cookies[SESSION_COOKIE_NAME]
   const ip = req.ip || req.connection?.remoteAddress || 'unknown'
-  
+
   if (sessionCookie && validateSession(sessionCookie, ip)) {
     return true
   }
-  
+
   BotUtil.makeLog('warn', `🔴 [密钥验证失败] IP: ${ip}`, 'QQBot')
   HttpResponse.forbidden(res, 'Unauthorized')
   return false
@@ -124,8 +151,16 @@ export default {
     {
       method: 'POST',
       path: '/api/qqbot/auth/temp-key',
+      systemAuth: false,
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
         const ip = req.ip || req.connection?.remoteAddress || 'unknown'
+        
+        const rateLimit = checkTempKeyRateLimit(ip)
+        if (!rateLimit.allowed) {
+          BotUtil.makeLog('warn', `🔴 [临时Key频率限制] IP: ${ip}，${rateLimit.retryAfter}秒后重试`, 'QQBot')
+          res.setHeader('Retry-After', rateLimit.retryAfter)
+          return HttpResponse.error(res, null, 429, `请求过于频繁，请${rateLimit.retryAfter}秒后重试`)
+        }
         
         try {
           const tempKey = createTempKey()
@@ -143,6 +178,7 @@ export default {
     {
       method: 'POST',
       path: '/api/qqbot/auth/temp-login',
+      systemAuth: false,
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
         const { tempKey } = req.body || {}
         const ip = req.ip || req.connection?.remoteAddress || 'unknown'
@@ -178,6 +214,7 @@ export default {
     {
       method: 'POST',
       path: '/api/qqbot/auth/login',
+      systemAuth: false,
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
         const { password } = req.body || {}
         const ip = req.ip || req.connection?.remoteAddress || 'unknown'
@@ -198,12 +235,14 @@ export default {
           const inputBuffer = Buffer.from(String(password), 'utf8')
           const storedBuffer = Buffer.from(String(adminPassword), 'utf8')
           
-          if (inputBuffer.length !== storedBuffer.length) {
-            BotUtil.makeLog('warn', `[登录失败] 密码错误 IP: ${ip}`, 'QQBot')
-            return HttpResponse.forbidden(res, '密码错误')
-          }
+          // 填充到相同长度后再比较，避免泄露密码长度信息
+          const maxLen = Math.max(inputBuffer.length, storedBuffer.length)
+          const paddedInput = Buffer.alloc(maxLen)
+          const paddedStored = Buffer.alloc(maxLen)
+          inputBuffer.copy(paddedInput)
+          storedBuffer.copy(paddedStored)
           
-          const valid = crypto.timingSafeEqual(inputBuffer, storedBuffer)
+          const valid = crypto.timingSafeEqual(paddedInput, paddedStored)
           if (!valid) {
             BotUtil.makeLog('warn', `[登录失败] 密码错误 IP: ${ip}`, 'QQBot')
             return HttpResponse.forbidden(res, '密码错误')
@@ -235,6 +274,7 @@ export default {
     {
       method: 'POST',
       path: '/api/qqbot/auth/logout',
+      systemAuth: false,
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
         const ip = req.ip || req.connection?.remoteAddress || 'unknown'
         const cookies = parseCookies(req)
@@ -253,6 +293,7 @@ export default {
     {
       method: 'GET',
       path: '/api/qqbot/auth/check',
+      systemAuth: false,
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
         const cookies = parseCookies(req)
         const sessionCookie = cookies[SESSION_COOKIE_NAME]
@@ -266,8 +307,9 @@ export default {
     {
       method: 'GET',
       path: '/api/qqbot/status',
+      systemAuth: false,
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
-        if (!ensureAuthorized(req, res, Bot)) return;
+        if (!ensureAuthorized(req, res)) return;
         logWebAccess(req, Bot, '获取状态')
 
         const tasker = getTasker(Bot);
@@ -308,8 +350,9 @@ export default {
     {
       method: 'GET',
       path: '/api/qqbot/config',
+      systemAuth: false,
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
-        if (!ensureAuthorized(req, res, Bot)) return;
+        if (!ensureAuthorized(req, res)) return;
         logWebAccess(req, Bot, '获取配置')
 
         const config = getConfigInstance();
@@ -340,8 +383,9 @@ export default {
     {
       method: 'PUT',
       path: '/api/qqbot/config',
+      systemAuth: false,
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
-        if (!ensureAuthorized(req, res, Bot)) return;
+        if (!ensureAuthorized(req, res)) return;
         logWebAccess(req, Bot, '更新配置')
 
         const config = getConfigInstance();
@@ -374,8 +418,9 @@ export default {
     {
       method: 'POST',
       path: '/api/qqbot/config',
+      systemAuth: false,
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
-        if (!ensureAuthorized(req, res, Bot)) return;
+        if (!ensureAuthorized(req, res)) return;
 
         const config = getConfigInstance();
         if (!config) {
@@ -395,8 +440,9 @@ export default {
     {
       method: 'POST',
       path: '/api/qqbot/test-connect',
+      systemAuth: false,
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
-        if (!ensureAuthorized(req, res, Bot)) return;
+        if (!ensureAuthorized(req, res)) return;
 
         const { appId, clientSecret } = req.body || {};
         if (!appId || !clientSecret) {
@@ -450,8 +496,9 @@ export default {
     {
       method: 'POST',
       path: '/api/qqbot/accounts',
+      systemAuth: false,
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
-        if (!ensureAuthorized(req, res, Bot)) return;
+        if (!ensureAuthorized(req, res)) return;
 
         const config = getConfigInstance();
         if (!config) {
@@ -482,8 +529,9 @@ export default {
     {
       method: 'DELETE',
       path: '/api/qqbot/accounts/:appId',
+      systemAuth: false,
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
-        if (!ensureAuthorized(req, res, Bot)) return;
+        if (!ensureAuthorized(req, res)) return;
         logWebAccess(req, Bot, `删除账号 ${req.params.appId}`)
 
         const config = getConfigInstance();
@@ -514,8 +562,9 @@ export default {
     {
       method: 'POST',
       path: '/api/qqbot/disconnect/:appId',
+      systemAuth: false,
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
-        if (!ensureAuthorized(req, res, Bot)) return;
+        if (!ensureAuthorized(req, res)) return;
 
         const tasker = getTasker(Bot);
         if (!tasker) {
@@ -542,8 +591,9 @@ export default {
     {
       method: 'POST',
       path: '/api/qqbot/reconnect/:appId',
+      systemAuth: false,
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
-        if (!ensureAuthorized(req, res, Bot)) return;
+        if (!ensureAuthorized(req, res)) return;
 
         const tasker = getTasker(Bot);
         const config = getConfigInstance();
@@ -587,8 +637,9 @@ export default {
     {
       method: 'POST',
       path: '/api/qqbot/reload',
+      systemAuth: false,
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
-        if (!ensureAuthorized(req, res, Bot)) return;
+        if (!ensureAuthorized(req, res)) return;
 
         const tasker = getTasker(Bot);
         if (!tasker) {
@@ -608,8 +659,9 @@ export default {
     {
       method: 'POST',
       path: '/api/qqbot/master/:botId',
+      systemAuth: false,
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
-        if (!ensureAuthorized(req, res, Bot)) return;
+        if (!ensureAuthorized(req, res)) return;
         logWebAccess(req, Bot, `添加主人 ${req.params.botId}`)
 
         const { botId } = req.params
@@ -644,8 +696,9 @@ export default {
     {
       method: 'GET',
       path: '/api/qqbot/master/:botId',
+      systemAuth: false,
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
-        if (!ensureAuthorized(req, res, Bot)) return;
+        if (!ensureAuthorized(req, res)) return;
 
         const { botId } = req.params
         const cfg = (await import('../../../src/infrastructure/config/config.js')).default
@@ -662,8 +715,9 @@ export default {
     {
       method: 'DELETE',
       path: '/api/qqbot/master/:botId/:master',
+      systemAuth: false,
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
-        if (!ensureAuthorized(req, res, Bot)) return;
+        if (!ensureAuthorized(req, res)) return;
         logWebAccess(req, Bot, `移除主人 ${req.params.botId}/${req.params.master}`)
 
         const { botId, master } = req.params
@@ -684,8 +738,9 @@ export default {
     {
       method: 'GET',
       path: '/api/qqbot/accounts/:appId/config',
+      systemAuth: false,
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
-        if (!ensureAuthorized(req, res, Bot)) return;
+        if (!ensureAuthorized(req, res)) return;
 
         const { appId } = req.params
         const config = getConfigInstance()
@@ -720,8 +775,9 @@ export default {
     {
       method: 'PUT',
       path: '/api/qqbot/accounts/:appId/config',
+      systemAuth: false,
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
-        if (!ensureAuthorized(req, res, Bot)) return;
+        if (!ensureAuthorized(req, res)) return;
         logWebAccess(req, Bot, `更新账户配置 ${req.params.appId}`)
 
         const { appId } = req.params

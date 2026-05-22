@@ -335,19 +335,30 @@ Bot.tasker.push(
       }
 
       Bot[id].sdk.sessionManager.on("DEAD", (data) => {
-        const errorMsg = data.msg || '连接断开'
-        if (errorMsg.includes('11298') || errorMsg.includes('IP不在白名单')) {
-          Bot.makeLog('error', `🔴 [连接失败] QQBot (${id}) - IP 不在白名单，请在 QQ 开放平台添加服务器公网 IP 到白名单`, 'QQBot')
-        } else {
-          Bot.makeLog('info', `🔴 [设备下线] QQBot (${Bot[id]?.nickname || id}) - 原因: ${errorMsg}`, 'QQBot')
-          Bot.makeLog('warn', `QQBot 连接断开: ${errorMsg}`, id)
+        try {
+          const errorMsg = data.msg || '连接断开'
+          if (errorMsg.includes('11298') || errorMsg.includes('IP不在白名单')) {
+            Bot.makeLog('error', `🔴 [连接失败] QQBot (${id}) - IP 不在白名单，请在 QQ 开放平台添加服务器公网 IP 到白名单`, 'QQBot')
+          } else {
+            Bot.makeLog('info', `🔴 [设备下线] QQBot (${Bot[id]?.nickname || id}) - 原因: ${errorMsg}`, 'QQBot')
+            Bot.makeLog('warn', `QQBot 连接断开: ${errorMsg}`, id)
+          }
+          // 移除 SDK 事件监听器
+          Bot[id]?.sdk?.removeAllListeners?.("message")
+          Bot[id]?.sdk?.removeAllListeners?.("notice")
+          this.bots.delete(id)
+          // 清理 appid 映射
+          for (const [appId, entry] of Object.entries(this.appid)) {
+            if (entry.uin === id) delete this.appid[appId]
+          }
+          if (Bot[id]) {
+            delete Bot[id]
+            Bot.uin = Bot.uin.filter(u => u !== id)
+          }
+          Bot.em(`disconnect.${id}`, { self_id: id, reason: errorMsg })
+        } catch (err) {
+          Bot.makeLog('error', `QQBot DEAD 事件处理异常: ${err.message}`, 'QQBot', err)
         }
-        this.bots.delete(id)
-        if (Bot[id]) {
-          delete Bot[id]
-          Bot.uin = Bot.uin.filter(u => u !== id)
-        }
-        Bot.em(`disconnect.${id}`, { self_id: id, reason: errorMsg })
       })
 
       let loginError = null
@@ -384,6 +395,13 @@ Bot.tasker.push(
       this.bots.set(id, Bot[id])
       if (!Bot.uin.includes(id)) Bot.uin.push(id)
 
+      // 填充 appid 映射，供 WebHook 使用
+      this.appid[account.appId] = {
+        uin: id,
+        sdk,
+        info: { secret: account.clientSecret },
+      }
+
       Bot.makeLog('mark', `${this.name}(${this.id}) ${this.version} ${Bot[id].nickname} 已连接`, id)
       Bot.makeLog('info', `🟢 [设备上线] QQBot (${Bot[id].nickname || id}) - AppID: ${account.appId}`, 'QQBot')
       Bot.em(`connect.${id}`, { self_id: id })
@@ -395,11 +413,18 @@ Bot.tasker.push(
       if (bot) {
         Bot.makeLog('info', `🔴 [设备下线] QQBot (${bot.nickname || id}) - 原因: 主动断开`, 'QQBot')
         try {
+          // 移除 SDK 事件监听器
+          bot.sdk.removeAllListeners("message")
+          bot.sdk.removeAllListeners("notice")
           await bot.logout()
         } catch (err) {
           Bot.makeLog('debug', `断开连接时发生错误: ${err.message}`, id)
         }
         this.bots.delete(id)
+        // 清理 appid 映射
+        for (const [appId, entry] of Object.entries(this.appid)) {
+          if (entry.uin === id) delete this.appid[appId]
+        }
         delete Bot[id]
         Bot.uin = Bot.uin.filter(u => u !== id)
         Bot.makeLog('mark', `QQBot ${bot.nickname || id} 已断开`, id)

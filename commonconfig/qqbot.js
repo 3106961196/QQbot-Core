@@ -1,6 +1,8 @@
 import ConfigBase from '../../../src/infrastructure/commonconfig/commonconfig.js';
 
 export default class QQBotConfig extends ConfigBase {
+  #writeLock = Promise.resolve()
+
   constructor() {
     super({
       name: 'qqbot',
@@ -158,25 +160,44 @@ export default class QQBotConfig extends ConfigBase {
   }
 
   async addAccount(account) {
-    const data = await this.read();
-    if (!data.accounts) data.accounts = [];
-    const existingIndex = data.accounts.findIndex(a => a.name === account.name);
-    if (existingIndex >= 0) {
-      data.accounts[existingIndex] = account;
-    } else {
-      data.accounts.push(account);
+    const release = await this._acquireLock()
+    try {
+      const data = await this.read();
+      if (!data.accounts) data.accounts = [];
+      const existingIndex = data.accounts.findIndex(a => a.name === account.name);
+      if (existingIndex >= 0) {
+        data.accounts[existingIndex] = account;
+      } else {
+        data.accounts.push(account);
+      }
+      await this.write(data);
+      return data.accounts;
+    } finally {
+      release()
     }
-    await this.write(data);
-    return data.accounts;
   }
 
-  async removeAccount(accountName) {
-    const data = await this.read();
-    if (data.accounts) {
-      data.accounts = data.accounts.filter(a => a.name !== accountName);
-      await this.write(data);
+  async removeAccount(accountId) {
+    const release = await this._acquireLock()
+    try {
+      const data = await this.read();
+      if (data.accounts) {
+        data.accounts = data.accounts.filter(a => a.name !== accountId && a.appId !== accountId);
+        await this.write(data);
+      }
+      return data.accounts;
+    } finally {
+      release()
     }
-    return data.accounts;
+  }
+
+  async _acquireLock() {
+    let release
+    const nextLock = new Promise(resolve => { release = resolve })
+    const prevLock = this.#writeLock
+    this.#writeLock = nextLock
+    await prevLock
+    return release
   }
 
   async listAccounts() {

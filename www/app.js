@@ -1,5 +1,11 @@
 const API_BASE = '';
 
+// HTML 转义，防止 XSS
+const escapeHtml = (str) => {
+    if (str == null) return '';
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+};
+
 class QQBotManager {
     constructor() {
         this.bots = [];
@@ -183,16 +189,19 @@ class QQBotManager {
         const isOnline = bot.status === 'online';
         const statusClass = isOnline ? 'online' : 'offline';
         const statusText = isOnline ? '在线' : '离线';
+        const safeNickname = escapeHtml(bot.nickname || bot.id);
+        const safeId = escapeHtml(bot.id);
+        const safeAppId = escapeHtml(bot.appId || '');
         
         const actionButton = isOnline 
-            ? `<button class="btn btn-secondary btn-sm btn-disconnect" data-id="${bot.id}">
+            ? `<button class="btn btn-secondary btn-sm btn-disconnect" data-id="${safeId}">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M18.36 6.64a9 9 0 1 1-12.73 0"/>
                     <line x1="12" y1="2" x2="12" y2="12"/>
                 </svg>
                 断开
                </button>`
-            : `<button class="btn btn-success btn-sm btn-reconnect" data-app-id="${bot.appId}">
+            : `<button class="btn btn-success btn-sm btn-reconnect" data-app-id="${safeAppId}">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M23 4v6h-6"/>
                     <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
@@ -201,13 +210,13 @@ class QQBotManager {
                </button>`;
         
         return `
-            <div class="bot-card ${isOnline ? '' : 'offline'}" data-id="${bot.id}" data-app-id="${bot.appId}">
+            <div class="bot-card ${isOnline ? '' : 'offline'}" data-id="${safeId}" data-app-id="${safeAppId}">
                 <div class="bot-card-header">
                     <div class="bot-info">
-                        <div class="bot-avatar">${initial}</div>
+                        <div class="bot-avatar">${escapeHtml(initial)}</div>
                         <div>
-                            <div class="bot-name">${bot.nickname || bot.id}</div>
-                            <div class="bot-id">ID: ${bot.id}</div>
+                            <div class="bot-name">${safeNickname}</div>
+                            <div class="bot-id">ID: ${safeId}</div>
                         </div>
                     </div>
                     <div class="bot-status ${statusClass}">
@@ -222,19 +231,19 @@ class QQBotManager {
                     </div>
                     <div class="bot-detail">
                         <span class="bot-detail-label">AppID</span>
-                        <span class="bot-detail-value">${bot.appId || '-'}</span>
+                        <span class="bot-detail-value">${safeAppId || '-'}</span>
                     </div>
                 </div>
                 <div class="bot-card-actions">
                     ${actionButton}
-                    <button class="btn btn-danger btn-sm btn-delete" data-app-id="${bot.appId}">
+                    <button class="btn btn-danger btn-sm btn-delete" data-app-id="${safeAppId}">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <polyline points="3,6 5,6 21,6"/>
                             <path d="M19,6v14a2,2,0,0,1-2,2H7a2,2,0,0,1-2-2V6m3,0V4a2,2,0,0,1,2-2h4a2,2,0,0,1,2,2v2"/>
                         </svg>
                         删除
                     </button>
-                    <button class="btn-icon btn-bot-settings" data-id="${bot.id}" data-app-id="${bot.appId}" title="设置">
+                    <button class="btn-icon btn-bot-settings" data-id="${safeId}" data-app-id="${safeAppId}" title="设置">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <circle cx="12" cy="12" r="3"/>
                             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
@@ -461,8 +470,8 @@ class QQBotManager {
             if (response.success && response.masters && response.masters.length > 0) {
                 masterList.innerHTML = response.masters.map(master => `
                     <div class="master-item">
-                        <span class="master-id">${master}</span>
-                        <button class="btn-icon btn-sm btn-remove-master" data-master="${master}" title="移除">
+                        <span class="master-id">${escapeHtml(master)}</span>
+                        <button class="btn-icon btn-sm btn-remove-master" data-master="${escapeHtml(master)}" title="移除">
                             ✕
                         </button>
                     </div>
@@ -749,7 +758,7 @@ class QQBotManager {
         toast.className = `toast ${type}`;
         toast.innerHTML = `
             <span class="toast-icon">${icons[type]}</span>
-            <span>${message}</span>
+            <span>${escapeHtml(message)}</span>
         `;
 
         this.toastContainer.appendChild(toast);

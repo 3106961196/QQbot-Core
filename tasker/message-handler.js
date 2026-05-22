@@ -1,15 +1,16 @@
 export class MessageHandler {
+  static MAX_FRIENDS = 5000
+  static MAX_GROUPS = 5000
+  static MAX_GROUP_MEMBERS = 5000
+
   constructor(tasker) {
-    // 不保存 tasker 引用
-    this._config = tasker.config
-    this._sep = tasker.sep
-    this._bind_user = tasker.bind_user
+    this._tasker = tasker
     this.messageBuilder = null
   }
 
-  get config() { return this._config }
-  get sep() { return this._sep }
-  get bind_user() { return this._bind_user }
+  get config() { return this._tasker.config }
+  get sep() { return this._tasker.sep }
+  get bind_user() { return this._tasker.bind_user }
 
   setMessageBuilder(builder) {
     this.messageBuilder = builder
