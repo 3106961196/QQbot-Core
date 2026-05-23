@@ -16,8 +16,8 @@
 ## 拉取代码
 
 ```bash
-# 克隆到 XRK-AGT 的 core 目录下
-git clone https://github.com/3106961196/QQbot-Core.git core/QQbot-Core
+# 在 XRK-AGT 的 core 目录下执行以下命令拉取代码
+git clone https://github.com/3106961196/QQbot-Core.git
 ```
 
 ***
