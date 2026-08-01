@@ -38,9 +38,9 @@ export default class QQBotConfig extends ConfigBase {
             fields: {
               name: {
                 type: 'string',
-                label: '账户名称',
-                description: '账户标识名称',
-                default: 'default',
+                label: 'botId',
+                description: '固定为 AppID，勿手改',
+                default: '',
                 component: 'Input'
               },
               appId: {
@@ -56,6 +56,20 @@ export default class QQBotConfig extends ConfigBase {
                 description: 'QQ开放平台应用的ClientSecret',
                 default: '',
                 component: 'Password'
+              },
+              nickname: {
+                type: 'string',
+                label: '昵称',
+                description: '连接成功后由接口自动写入',
+                default: '',
+                component: 'Input'
+              },
+              remark: {
+                type: 'string',
+                label: '备注',
+                description: '本地备注，仅管理页展示',
+                default: '',
+                component: 'Input'
               },
               enabled: {
                 type: 'boolean',
@@ -169,6 +183,18 @@ export default class QQBotConfig extends ConfigBase {
     });
   }
 
+  /**
+   * 首次读取若尚无 data/QQBot.json，把模板落盘（避免只读内存模板、控制台保存才“出现文件”）。
+   */
+  async read(useCache = true) {
+    const missing = !(await this.exists())
+    const data = await super.read(useCache)
+    if (missing) {
+      await this.write(data, { backup: false, validate: false })
+    }
+    return data
+  }
+
   async getAccount(accountName = 'default') {
     const data = await this.read();
     const accounts = data.accounts || [];
@@ -180,11 +206,18 @@ export default class QQBotConfig extends ConfigBase {
     try {
       const data = await this.read();
       if (!data.accounts) data.accounts = [];
-      const existingIndex = data.accounts.findIndex(a => a.name === account.name);
+      const row = {
+        ...account,
+        name: account.appId,
+        appId: account.appId,
+        nickname: account.nickname || '',
+        remark: account.remark || '',
+      }
+      const existingIndex = data.accounts.findIndex(a => a.appId === row.appId);
       if (existingIndex >= 0) {
-        data.accounts[existingIndex] = account;
+        data.accounts[existingIndex] = { ...data.accounts[existingIndex], ...row };
       } else {
-        data.accounts.push(account);
+        data.accounts.push(row);
       }
       await this.write(data);
       return data.accounts;

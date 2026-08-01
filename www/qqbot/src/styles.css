@@ -45,8 +45,10 @@ body {
   width: 28px;
   height: 28px;
   border-radius: 7px;
-  background: linear-gradient(145deg, #3b8bff, #1677ff);
+  object-fit: cover;
+  display: block;
   box-shadow: 0 2px 6px rgba(22, 119, 255, 0.28);
+  flex-shrink: 0;
 }
 
 .app-brand-title {
@@ -83,13 +85,102 @@ body {
   padding: 28px 28px 24px;
 }
 
-.switch-grid {
-  display: grid;
-  gap: 4px 0;
+/* 弹窗：内容区限高，footer 不被挤出视口 */
+.qq-modal .ant-modal-content {
+  display: flex;
+  flex-direction: column;
+  max-height: min(86vh, 720px);
 }
 
-.switch-grid .ant-form-item {
-  margin-bottom: 8px;
+.qq-modal .ant-modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding-top: 8px !important;
+  padding-bottom: 4px !important;
+}
+
+.qq-modal .ant-modal-footer {
+  flex-shrink: 0;
+  margin-top: 0;
+  padding-top: 12px;
+  border-top: 1px solid #e8eef6;
+}
+
+.qq-modal-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: center;
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  background: #f5f8fc;
+  border: 1px solid #e8eef6;
+  border-radius: 8px;
+}
+
+.qq-modal-meta .meta-id {
+  font-size: 12px;
+  color: #8c8c8c;
+  font-variant-numeric: tabular-nums;
+}
+
+.dense-switch-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 8px;
+  margin-bottom: 12px;
+}
+
+.dense-switch-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  padding: 7px 10px;
+  background: #f7faff;
+  border: 1px solid #e8eef6;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #1f1f1f;
+  user-select: none;
+}
+
+.dense-switch-item:hover {
+  border-color: #91caff;
+}
+
+.dense-fields .ant-form-item {
+  margin-bottom: 10px;
+}
+
+.master-compact {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.master-compact-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 28px;
+}
+
+.master-compact-list .ant-tag {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+}
+
+.master-compact-hint {
+  font-size: 12px;
+  color: #8c8c8c;
+  line-height: 1.4;
 }
 
 @media (max-width: 640px) {
@@ -104,5 +195,9 @@ body {
 
   .app-main {
     padding: 16px 12px 40px;
+  }
+
+  .dense-switch-grid {
+    grid-template-columns: 1fr;
   }
 }

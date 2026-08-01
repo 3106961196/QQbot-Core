@@ -32,7 +32,7 @@ cd www/qqbot && pnpm install && pnpm build && cd ../..
 
 3. 「点击获取」临时 Key → 看后台日志 → 登录 → 添加账号
 
-或编辑 `data/QQBot.json`（模板：`default/qqbot.json`）。
+运行时文件：仓库根目录 **`data/QQBot.json`**（首次启动会从 `default/qqbot.json` 自动创建；不要只改模板）。
 
 ***
 
@@ -52,7 +52,7 @@ cd www/qqbot && pnpm install && pnpm build && cd ../..
 | 项 | 说明 |
 |----|------|
 | `accounts[].appId` / `clientSecret` | 必填 |
-| `accounts[].name` | botId（默认 AppID）；连接 / 主人 / 插件指令同一 id |
+| `accounts[].appId` | botId（固定）；昵称连接后写入 `nickname`，备注为 `remark` |
 | `accounts[].enabled` | `false` 则不连 |
 | `accounts[].autoConnect` / `markdownSupport` | 单账号 |
 | `adminPassword` | Web 密码登录（可选；推荐临时 Key） |

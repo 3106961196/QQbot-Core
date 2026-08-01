@@ -17,7 +17,7 @@ export default class QQBotEvent extends ListenerBase {
   async handleEvent(e) {
     if (!e) return
     try {
-      e.bot = e.bot || (e.self_id ? AgentRuntime[e.self_id] : null)
+      // bot 由 AgentRuntime.prepareEvent / makeMessage 挂载（可能只读），勿再赋值
       if (!e.bot && e.post_type === 'message') {
         AgentRuntime.makeLog('warn', `账号不存在，忽略: ${e.self_id}`, e.self_id)
         return

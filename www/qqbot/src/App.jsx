@@ -30,7 +30,7 @@ import {
 import { api } from './api.js'
 import { deepClone } from './compat.js'
 
-const { Text, Title } = Typography
+const { Text } = Typography
 
 function useNotify() {
   const { message } = AntApp.useApp()
@@ -56,7 +56,14 @@ function confirmAction(modal, options) {
 function Brand({ sub }) {
   return (
     <div className="app-brand">
-      <div className="app-brand-mark" aria-hidden />
+      <img
+        className="app-brand-mark"
+        src={`${import.meta.env.BASE_URL}qqbot-icon.png`}
+        alt=""
+        width={28}
+        height={28}
+        aria-hidden="true"
+      />
       <div>
         <div className="app-brand-title">QQBot 管理</div>
         {sub ? <div className="app-brand-sub">{sub}</div> : null}
@@ -144,36 +151,45 @@ function LoginView({ onAuthed }) {
   )
 }
 
+const GLOBAL_SWITCHES = [
+  ['sandbox', '沙箱模式'],
+  ['toQRCode', '链接转二维码'],
+  ['toCallback', '按钮 Callback'],
+  ['toBotUpload', 'Bot 图床上传'],
+  ['hideGuildRecall', '隐藏频道撤回'],
+  ['defaultMarkdownSupport', '默认 Markdown'],
+]
+
+function DenseSwitchGrid({ fields }) {
+  return (
+    <div className="dense-switch-grid">
+      {fields.map(([name, label]) => (
+        <label key={name} className="dense-switch-item">
+          <span>{label}</span>
+          <Form.Item name={name} valuePropName="checked" noStyle>
+            <Switch size="small" />
+          </Form.Item>
+        </label>
+      ))}
+    </div>
+  )
+}
+
 function GlobalConfigForm({ form }) {
   return (
-    <Form form={form} layout="horizontal" labelCol={{ span: 10 }} wrapperCol={{ span: 14 }}>
-      <Form.Item name="sandbox" label="沙箱模式" valuePropName="checked">
-        <Switch />
-      </Form.Item>
-      <Form.Item name="toQRCode" label="链接转二维码" valuePropName="checked">
-        <Switch />
-      </Form.Item>
-      <Form.Item name="toCallback" label="按钮 Callback" valuePropName="checked">
-        <Switch />
-      </Form.Item>
-      <Form.Item name="toBotUpload" label="Bot 图床上传" valuePropName="checked">
-        <Switch />
-      </Form.Item>
-      <Form.Item name="hideGuildRecall" label="隐藏频道撤回" valuePropName="checked">
-        <Switch />
-      </Form.Item>
-      <Form.Item name="defaultMarkdownSupport" label="默认 Markdown" valuePropName="checked">
-        <Switch />
-      </Form.Item>
-      <Form.Item name="imageLength" label="图片压缩边长" rules={[{ required: true }]}>
-        <InputNumber min={1} style={{ width: '100%' }} />
-      </Form.Item>
-      <Form.Item name="maxRetry" label="最大重试" rules={[{ required: true }]}>
-        <InputNumber min={0} style={{ width: '100%' }} />
-      </Form.Item>
-      <Form.Item name="timeout" label="超时 (ms)" rules={[{ required: true }]}>
-        <InputNumber min={1000} step={1000} style={{ width: '100%' }} />
-      </Form.Item>
+    <Form form={form} layout="vertical" className="dense-fields" size="small">
+      <DenseSwitchGrid fields={GLOBAL_SWITCHES} />
+      <div className="dense-switch-grid">
+        <Form.Item name="imageLength" label="图片压缩边长" rules={[{ required: true }]}>
+          <InputNumber min={1} style={{ width: '100%' }} />
+        </Form.Item>
+        <Form.Item name="maxRetry" label="最大重试" rules={[{ required: true }]}>
+          <InputNumber min={0} style={{ width: '100%' }} />
+        </Form.Item>
+        <Form.Item name="timeout" label="超时 (ms)" rules={[{ required: true }]} style={{ gridColumn: '1 / -1' }}>
+          <InputNumber min={1000} step={1000} style={{ width: '100%' }} />
+        </Form.Item>
+      </div>
     </Form>
   )
 }
@@ -244,13 +260,16 @@ function GlobalConfigModal({ open, onClose, onSaved }) {
 
   return (
     <Modal
+      className="qq-modal"
       title="全局配置"
       open={open}
       onCancel={onClose}
       onOk={save}
+      okText="保存"
       confirmLoading={saving}
       destroyOnHidden
-      width={480}
+      centered
+      width={520}
     >
       <Spin spinning={loading}>
         <GlobalConfigForm form={form} />
@@ -263,25 +282,38 @@ function AddBotModal({ open, onClose, onAdded }) {
   const notify = useNotify()
   const [form] = Form.useForm()
   const [busy, setBusy] = useState(false)
+  /** 仅当前 AppID+Secret 测通后才允许保存 */
+  const [verifiedKey, setVerifiedKey] = useState('')
+
+  const watchAppId = Form.useWatch('appId', form)
+  const watchSecret = Form.useWatch('clientSecret', form)
+  const credKey = `${String(watchAppId || '').trim()}\0${String(watchSecret || '').trim()}`
+  const canSave = !!verifiedKey && verifiedKey === credKey
 
   useEffect(() => {
     if (open) {
       form.resetFields()
       form.setFieldsValue({ enabled: true, markdownSupport: false })
+      setVerifiedKey('')
     }
   }, [open, form])
+
+  useEffect(() => {
+    if (verifiedKey && verifiedKey !== credKey) setVerifiedKey('')
+  }, [credKey, verifiedKey])
 
   const test = async () => {
     const values = await form.validateFields(['appId', 'clientSecret'])
     setBusy(true)
     try {
-      await api.testConnect({
-        appId: values.appId.trim(),
-        clientSecret: values.clientSecret.trim(),
-      })
-      notify('连接测试成功')
+      const appId = values.appId.trim()
+      const clientSecret = values.clientSecret.trim()
+      await api.testConnect({ appId, clientSecret })
+      setVerifiedKey(`${appId}\0${clientSecret}`)
+      notify('连接测试成功，可以保存')
     } catch (err) {
-      notify(err.message, 'error')
+      setVerifiedKey('')
+      notify(err.message || '连接失败，未保存', 'error')
     } finally {
       setBusy(false)
     }
@@ -289,16 +321,21 @@ function AddBotModal({ open, onClose, onAdded }) {
 
   const save = async () => {
     const values = await form.validateFields()
+    const appId = values.appId.trim()
+    const clientSecret = values.clientSecret.trim()
+    if (`${appId}\0${clientSecret}` !== verifiedKey) {
+      notify('请先测试连接成功再保存', 'error')
+      return
+    }
     setBusy(true)
     try {
       await api.addAccount({
-        appId: values.appId.trim(),
-        clientSecret: values.clientSecret.trim(),
-        name: (values.name || '').trim() || values.appId.trim(),
+        appId,
+        clientSecret,
         enabled: values.enabled !== false,
         markdownSupport: !!values.markdownSupport,
       })
-      notify('账号已添加')
+      notify('账号已添加（昵称连接后自动获取）')
       onAdded?.()
       onClose()
     } catch (err) {
@@ -310,43 +347,54 @@ function AddBotModal({ open, onClose, onAdded }) {
 
   return (
     <Modal
+      className="qq-modal"
       title="添加账号"
       open={open}
       onCancel={onClose}
       destroyOnHidden
+      centered
+      width={480}
       footer={
         <Space>
           <Button onClick={onClose}>取消</Button>
           <Button loading={busy} onClick={test}>
             测试连接
           </Button>
-          <Button type="primary" loading={busy} onClick={save}>
+          <Button type="primary" loading={busy} disabled={!canSave} onClick={save}>
             保存
           </Button>
         </Space>
       }
-      width={480}
     >
-      <Form form={form} layout="vertical" requiredMark={false}>
+      <Form form={form} layout="vertical" size="small" requiredMark={false} className="dense-fields">
         <Form.Item name="appId" label="AppID" rules={[{ required: true, message: '必填' }]}>
           <Input />
         </Form.Item>
         <Form.Item name="clientSecret" label="ClientSecret" rules={[{ required: true, message: '必填' }]}>
           <Input.Password />
         </Form.Item>
-        <Form.Item name="name" label="名称（botId，默认 AppID）">
-          <Input placeholder="可选" />
-        </Form.Item>
-        <Form.Item name="enabled" label="启用并连接" valuePropName="checked">
-          <Switch />
-        </Form.Item>
-        <Form.Item name="markdownSupport" label="Markdown" valuePropName="checked">
-          <Switch />
-        </Form.Item>
+        <DenseSwitchGrid
+          fields={[
+            ['enabled', '启用并连接'],
+            ['markdownSupport', 'Markdown'],
+          ]}
+        />
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          昵称连接后自动获取。{canSave ? '已测通，可保存。' : '须先测试连接成功再保存。'}
+        </Text>
       </Form>
     </Modal>
   )
 }
+
+const ACCOUNT_SWITCHES = [
+  ['sandbox', '沙箱'],
+  ['markdownSupport', 'Markdown'],
+  ['autoConnect', '自动连接'],
+  ['toQRCode', '链接转二维码'],
+  ['toCallback', '按钮 Callback'],
+  ['toBotUpload', 'Bot 图床'],
+]
 
 function BotSettingsModal({ bot, onClose }) {
   const notify = useNotify()
@@ -356,11 +404,13 @@ function BotSettingsModal({ bot, onClose }) {
   const [newMaster, setNewMaster] = useState('')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
+  const [tab, setTab] = useState('config')
 
   useEffect(() => {
     if (!bot) return
     let cancelled = false
     setLoading(true)
+    setTab('config')
     ;(async () => {
       try {
         const [cfgRes, masterRes] = await Promise.all([
@@ -434,77 +484,106 @@ function BotSettingsModal({ bot, onClose }) {
     }
   }
 
-  const boolFields = [
-    ['sandbox', '沙箱'],
-    ['markdownSupport', 'Markdown'],
-    ['autoConnect', '自动连接'],
-    ['toQRCode', '链接转二维码'],
-    ['toCallback', '按钮 Callback'],
-    ['toBotUpload', 'Bot 图床'],
-  ]
+  const title = bot.nickname || bot.appId
 
   return (
     <Modal
-      title={`账号设置 · ${bot.nickname || bot.id}`}
+      className="qq-modal"
+      title={`账号设置 · ${title}`}
       open
       onCancel={onClose}
+      centered
+      width={560}
+      destroyOnHidden
       footer={
         <Space>
           <Button onClick={onClose}>关闭</Button>
-          <Button type="primary" loading={busy} onClick={saveConfig}>
-            保存配置
-          </Button>
+          {tab === 'config' ? (
+            <Button type="primary" loading={busy} onClick={saveConfig}>
+              保存配置
+            </Button>
+          ) : null}
         </Space>
       }
-      width={520}
-      destroyOnHidden
     >
       <Spin spinning={loading}>
-        <Form form={form} layout="horizontal" labelCol={{ span: 10 }} wrapperCol={{ span: 14 }}>
-          {boolFields.map(([name, label]) => (
-            <Form.Item key={name} name={name} label={label} valuePropName="checked">
-              <Switch />
-            </Form.Item>
-          ))}
-          <Form.Item name="imageLength" label="图片边长">
-            <InputNumber min={1} style={{ width: '100%' }} />
-          </Form.Item>
-        </Form>
+        <div className="qq-modal-meta">
+          <Tag color="blue" style={{ margin: 0 }}>
+            {title}
+          </Tag>
+          <span className="meta-id">AppID {bot.appId}</span>
+          <Tag color={bot.status === 'online' ? 'success' : 'default'} style={{ margin: 0 }}>
+            {bot.status === 'online' ? '在线' : '离线'}
+          </Tag>
+        </div>
 
-        <Divider />
-        <Title level={5} style={{ marginTop: 0 }}>
-          主人
-        </Title>
-        <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
-          写入 chatbot.master.qq，格式 {bot.id}:OpenID
-        </Text>
-        <Space.Compact style={{ width: '100%', marginBottom: 12 }}>
-          <Input
-            value={newMaster}
-            onChange={(e) => setNewMaster(e.target.value)}
-            placeholder="OpenID / QQ"
-            onPressEnter={addMaster}
-          />
-          <Button type="primary" loading={busy} disabled={!newMaster.trim()} onClick={addMaster}>
-            添加
-          </Button>
-        </Space.Compact>
-        <Table
+        <Tabs
           size="small"
-          pagination={false}
-          rowKey="id"
-          dataSource={masters.map((id) => ({ id }))}
-          locale={{ emptyText: '暂无主人' }}
-          columns={[
-            { title: 'OpenID', dataIndex: 'id' },
+          activeKey={tab}
+          onChange={setTab}
+          items={[
             {
-              title: '',
-              width: 80,
-              align: 'right',
-              render: (_, row) => (
-                <Button type="link" danger size="small" onClick={() => removeMaster(row.id)}>
-                  删除
-                </Button>
+              key: 'config',
+              label: '配置',
+              children: (
+                <Form form={form} layout="vertical" size="small" className="dense-fields">
+                  <Form.Item name="remark" label="备注" style={{ marginBottom: 10 }}>
+                    <Input placeholder="本地备注（可选）" maxLength={200} allowClear />
+                  </Form.Item>
+                  <DenseSwitchGrid fields={ACCOUNT_SWITCHES} />
+                  <Form.Item name="imageLength" label="图片边长" style={{ marginBottom: 0, maxWidth: 200 }}>
+                    <InputNumber min={1} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Form>
+              ),
+            },
+            {
+              key: 'masters',
+              label: `主人 (${masters.length})`,
+              children: (
+                <div className="master-compact">
+                  <p className="master-compact-hint">
+                    写入 chatbot.master.qq · 格式 {bot.appId}:OpenID
+                  </p>
+                  <Space.Compact style={{ width: '100%' }}>
+                    <Input
+                      size="small"
+                      value={newMaster}
+                      onChange={(e) => setNewMaster(e.target.value)}
+                      placeholder="OpenID / QQ"
+                      onPressEnter={addMaster}
+                    />
+                    <Button
+                      type="primary"
+                      size="small"
+                      loading={busy}
+                      disabled={!newMaster.trim()}
+                      onClick={addMaster}
+                    >
+                      添加
+                    </Button>
+                  </Space.Compact>
+                  <div className="master-compact-list">
+                    {masters.length === 0 ? (
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        暂无主人
+                      </Text>
+                    ) : (
+                      masters.map((m) => (
+                        <Tag
+                          key={m}
+                          closable
+                          onClose={(ev) => {
+                            ev.preventDefault()
+                            removeMaster(m)
+                          }}
+                        >
+                          {m}
+                        </Tag>
+                      ))
+                    )}
+                  </div>
+                </div>
               ),
             },
           ]}
@@ -563,9 +642,10 @@ function Dashboard({ onLogout }) {
           <Space>
             <Avatar src={bot.avatar} size={40} />
             <div>
-              <div style={{ fontWeight: 500 }}>{bot.nickname || bot.id}</div>
+              <div style={{ fontWeight: 500 }}>{bot.nickname || bot.appId}</div>
               <Text type="secondary" style={{ fontSize: 12 }}>
-                AppID {bot.appId} · id {bot.id}
+                AppID {bot.appId}
+                {bot.remark ? ` · ${bot.remark}` : ''}
               </Text>
             </div>
           </Space>

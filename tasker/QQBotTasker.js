@@ -22,8 +22,9 @@ function errMsg(err) {
   return Error.isError(err) ? err.message : String(err ?? '')
 }
 
+/** botId 固定为 AppID；展示名用接口回写的 nickname */
 function botIdOf(account) {
-  return account.name || account.appId
+  return String(account.appId || '')
 }
 
 AgentRuntime.tasker.push(
@@ -52,6 +53,29 @@ AgentRuntime.tasker.push(
       return this.config
     }
 
+    /** 回写账号元数据（昵称等），不改 botId */
+    async persistAccountMeta(appId, patch = {}) {
+      const configInstance = ConfigLoader.get('qqbot')
+      if (!configInstance || !appId) return
+      const data = await configInstance.read(false)
+      const acc = (data.accounts || []).find(a => a.appId === appId)
+      if (!acc) return
+      let changed = false
+      for (const [k, v] of Object.entries(patch)) {
+        if (v === undefined || acc[k] === v) continue
+        acc[k] = v
+        changed = true
+      }
+      // name 与 botId 对齐为 AppID，避免旧自定义 name 漂移
+      if (acc.name !== appId) {
+        acc.name = appId
+        changed = true
+      }
+      if (!changed) return
+      await configInstance.write(data)
+      this.config = data
+    }
+
     async load() {
       try {
         await this.loadConfig()
@@ -61,6 +85,7 @@ AgentRuntime.tasker.push(
         this.messageHandler = new MessageHandler(this)
         this.messageHandler.setMessageBuilder(this.messageBuilder)
         this.setupWebHook()
+        this.printWebUrl()
         this.scheduleBotConnection()
         AgentRuntime.makeLog('mark', `${this.name}(${this.id}) ${this.version} 加载完成`, LOG)
       } catch (err) {
@@ -138,16 +163,6 @@ AgentRuntime.tasker.push(
       AgentRuntime.express.quiet.push(`/${this.name}`)
     }
 
-    async checkNetwork() {
-      try {
-        const dns = await import('node:dns').then(m => m.promises)
-        await dns.resolve('bots.qq.com')
-        return true
-      } catch {
-        return false
-      }
-    }
-
     async connect(account) {
       const id = botIdOf(account)
       if (this.bots.has(id)) await this.disconnect(id)
@@ -161,11 +176,6 @@ AgentRuntime.tasker.push(
 
       AgentRuntime.makeLog('info', `正在连接 ${id} (AppID ${account.appId})`, LOG)
 
-      if (!(await this.checkNetwork())) {
-        AgentRuntime.makeLog('error', '网络不可用，无法解析 bots.qq.com', id)
-        return false
-      }
-
       const sdk = new QQBotSDK(opts)
       const bot = this.createBotEntry(id, sdk, opts)
       AgentRuntime[id] = bot
@@ -174,7 +184,11 @@ AgentRuntime.tasker.push(
 
       try {
         await bot.login()
-        Object.assign(bot.info, await sdk.getSelfInfo())
+        const self = await sdk.getSelfInfo()
+        Object.assign(bot.info, self)
+        await this.persistAccountMeta(account.appId, {
+          nickname: self?.username || bot.nickname || '',
+        })
       } catch (err) {
         AgentRuntime.makeLog('error', `连接失败: ${errMsg(err)}`, id, err)
         try { sdk.stop() } catch { /* ignore */ }

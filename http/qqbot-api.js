@@ -135,6 +135,42 @@ const getConfigInstance = () => ConfigLoader.get('qqbot');
 
 const getTasker = (runtime) => runtime.tasker.find(t => t.id === 'QQBot');
 
+/** 凭证探测：READY 才算通；失败不写配置 */
+const probeConnect = async (appId, clientSecret, botConfig = {}) => {
+  const testBot = new QQBotSDK({
+    ...botConfig,
+    appid: appId,
+    secret: clientSecret,
+    intents: ['GROUP_AT_MESSAGE_CREATE', 'C2C_MESSAGE_CREATE'],
+  })
+
+  try {
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('连接超时'))
+      }, CONNECT_TEST_TIMEOUT)
+
+      testBot.sessionManager.once('READY', () => {
+        clearTimeout(timeout)
+        resolve()
+      })
+
+      testBot.sessionManager.once('DEAD', (data) => {
+        clearTimeout(timeout)
+        reject(new Error(data?.msg || '连接失败'))
+      })
+
+      testBot.start()
+    })
+  } finally {
+    try {
+      testBot.stop()
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 const readMasterList = () => {
   const list = runtimeConfig.chatbot?.master?.qq || []
   return (Array.isArray(list) ? list : [list]).map(String).filter(Boolean)
@@ -305,13 +341,14 @@ export default {
         const bots = [];
 
         for (const account of accounts) {
-          const botId = account.name || account.appId;
+          const botId = String(account.appId);
           const onlineBot = tasker.bots.get(botId);
           
           bots.push({
             id: botId,
             appId: account.appId,
-            nickname: onlineBot?.nickname || account.name || account.appId,
+            nickname: onlineBot?.nickname || account.nickname || account.appId,
+            remark: account.remark || '',
             avatar: onlineBot?.avatar || `https://q.qlogo.cn/g?b=qq&s=0&nk=${botId}`,
             status: onlineBot ? 'online' : 'offline',
             enabled: account.enabled !== false,
@@ -343,8 +380,10 @@ export default {
 
         const data = await config.read();
         const accounts = (data.accounts || []).map(a => ({
-          name: a.name,
+          name: a.appId,
           appId: a.appId,
+          nickname: a.nickname || '',
+          remark: a.remark || '',
           enabled: a.enabled !== false,
           markdownSupport: a.markdownSupport,
         }));
@@ -442,34 +481,8 @@ export default {
         const botConfig = configData.bot || {};
 
         try {
-          const testBot = new QQBotSDK({
-            ...botConfig,
-            appid: appId,
-            secret: clientSecret,
-            intents: ['GROUP_AT_MESSAGE_CREATE', 'C2C_MESSAGE_CREATE'],
-          });
-
-          await new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => {
-              testBot.stop();
-              reject(new Error('连接超时'));
-            }, CONNECT_TEST_TIMEOUT);
-
-            testBot.sessionManager.once('READY', () => {
-              clearTimeout(timeout);
-              testBot.stop();
-              resolve();
-            });
-
-            testBot.sessionManager.once('DEAD', (data) => {
-              clearTimeout(timeout);
-              reject(new Error(data.msg || '连接失败'));
-            });
-
-            testBot.start();
-          });
-
-          HttpResponse.success(res, { success: true }, '连接测试成功');
+          await probeConnect(appId, clientSecret, botConfig);
+          HttpResponse.success(res, { ok: true }, '连接测试成功');
         } catch (err) {
           RuntimeUtil.makeLog('error', `QQBot连接测试失败: ${err.message}`, 'QQBotAPI', err);
           HttpResponse.error(res, err, 400, 'qqbot.test-connect');
@@ -489,24 +502,43 @@ export default {
           return HttpResponse.notFound(res, 'QQBot配置实例未找到');
         }
 
-        const { appId, clientSecret, name, enabled = true, markdownSupport = false } = req.body || {};
+        const { appId, clientSecret, enabled = true, markdownSupport = false, remark = '' } = req.body || {};
         if (!appId || !clientSecret) {
           return HttpResponse.validationError(res, '缺少appId或clientSecret');
         }
 
-        const account = { name: name || appId, appId, clientSecret, enabled, markdownSupport };
+        const configData = await config.read();
+        try {
+          await probeConnect(appId, clientSecret, configData.bot || {});
+        } catch (err) {
+          RuntimeUtil.makeLog('warn', `拒绝保存未测通账号 ${appId}: ${err.message}`, 'QQBotAPI');
+          return HttpResponse.error(res, err, 400, '连接未成功，已拒绝写入配置');
+        }
+
+        const account = {
+          name: appId,
+          appId,
+          clientSecret,
+          enabled,
+          markdownSupport,
+          remark: String(remark || ''),
+          nickname: '',
+        };
         const accounts = await config.addAccount(account);
 
         const tasker = getTasker(Bot);
         if (tasker && enabled !== false) {
-          const botId = account.name || appId;
+          const botId = appId;
           if (tasker.bots.has(botId)) {
             await tasker.disconnect(botId);
           }
-          await tasker.connect(account);
+          const ok = await tasker.connect(account);
+          if (!ok) {
+            return HttpResponse.error(res, new Error('凭证已测通但正式连接失败'), 400, 'qqbot.accounts.add');
+          }
         }
 
-        HttpResponse.success(res, { accounts }, '账号已保存并连接');
+        HttpResponse.success(res, { accounts: await config.listAccounts() }, '账号已保存并连接');
       }, 'qqbot.accounts.add')
     },
 
@@ -524,7 +556,7 @@ export default {
 
         const { appId } = req.params;
         const accounts = await config.listAccounts();
-        const account = accounts.find(a => a.appId === appId || a.name === appId);
+        const account = accounts.find(a => a.appId === appId);
         
         if (!account) {
           return HttpResponse.notFound(res, `账号 ${appId} 不存在`);
@@ -532,8 +564,7 @@ export default {
 
         const tasker = getTasker(Bot);
         if (tasker) {
-          const botId = account.name || account.appId;
-          await tasker.disconnect(botId);
+          await tasker.disconnect(account.appId);
         }
 
         await config.removeAccount(account.appId);
@@ -555,18 +586,7 @@ export default {
         }
 
         const { appId } = req.params;
-        
-        let botId = appId;
-        const config = getConfigInstance();
-        if (config) {
-          const accounts = await config.listAccounts();
-          const account = accounts.find(a => a.appId === appId || a.name === appId);
-          if (account) {
-            botId = account.name || account.appId;
-          }
-        }
-        
-        await tasker.disconnect(botId);
+        await tasker.disconnect(appId);
         HttpResponse.success(res, null, '已断开连接');
       }, 'qqbot.disconnect')
     },
@@ -591,16 +611,14 @@ export default {
 
         const { appId } = req.params;
         const accounts = await config.listAccounts();
-        const account = accounts.find(a => a.appId === appId || a.name === appId);
+        const account = accounts.find(a => a.appId === appId);
         
         if (!account) {
           return HttpResponse.notFound(res, `账号 ${appId} 不存在`);
         }
 
-        const botId = account.name || account.appId;
-        
-        if (tasker.bots.has(botId)) {
-          await tasker.disconnect(botId);
+        if (tasker.bots.has(account.appId)) {
+          await tasker.disconnect(account.appId);
         }
         
         try {
@@ -741,6 +759,8 @@ export default {
 
         HttpResponse.success(res, {
           config: {
+            nickname: account.nickname || '',
+            remark: account.remark || '',
             sandbox: data.bot?.sandbox ?? false,
             maxRetry: data.bot?.maxRetry ?? 10,
             timeout: data.bot?.timeout ?? 30000,
@@ -789,6 +809,9 @@ export default {
         if (body.timeout !== undefined) {
           data.bot = data.bot || {}
           data.bot.timeout = Math.max(1000, body.timeout)
+        }
+        if (body.remark !== undefined) {
+          data.accounts[accountIndex].remark = String(body.remark)
         }
         if (body.markdownSupport !== undefined) {
           data.accounts[accountIndex].markdownSupport = body.markdownSupport

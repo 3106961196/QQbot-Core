@@ -19,7 +19,7 @@ export const officeTheme = {
     fontFamily:
       '"IBM Plex Sans", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif',
     fontSize: 14,
-    controlHeight: 36,
+    controlHeight: 32,
     boxShadow: '0 1px 2px rgba(15, 35, 70, 0.04)',
     boxShadowSecondary: '0 4px 16px rgba(15, 35, 70, 0.06)',
   },
@@ -31,18 +31,28 @@ export const officeTheme = {
       headerPadding: '0 24px',
     },
     Card: {
-      paddingLG: 20,
+      paddingLG: 16,
     },
     Button: {
       primaryShadow: 'none',
       defaultShadow: 'none',
     },
+    Form: {
+      itemMarginBottom: 12,
+    },
     Table: {
       headerBg: '#f5f8fc',
       rowHoverBg: '#f7faff',
+      cellPaddingBlockSM: 6,
+      cellPaddingInlineSM: 8,
     },
     Modal: {
-      paddingMD: 20,
+      paddingMD: 16,
+      titleFontSize: 16,
+    },
+    Tabs: {
+      horizontalItemPadding: '8px 0',
+      horizontalMargin: '0 0 12px 0',
     },
   },
 }

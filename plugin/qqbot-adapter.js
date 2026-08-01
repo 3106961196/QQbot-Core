@@ -4,7 +4,7 @@ import { normalizeError } from '../../../src/utils/normalize-error.js'
 
 const getTasker = () => AgentRuntime.tasker.find(t => t.id === 'QQBot')
 const getConfigInstance = () => ConfigLoader.get('qqbot')
-const botIdOf = (account) => account.name || account.appId
+const botIdOf = (account) => String(account.appId || '')
 
 export class QQBotAdapter extends PluginBase {
   constructor() {
@@ -66,7 +66,9 @@ export class QQBotAdapter extends PluginBase {
         const isOnline = tasker && tasker.bots.has(id)
         const status = isOnline ? '🟢 在线' : (acc.enabled !== false ? '⚪ 离线' : '❌ 禁用')
         const md = acc.markdownSupport ? ' [MD]' : ''
-        msg.push(`${i + 1}. [${acc.name || acc.appId}] ${status}${md}`)
+        const title = acc.nickname || acc.appId
+        const remark = acc.remark ? ` （${acc.remark}）` : ''
+        msg.push(`${i + 1}. [${title}]${remark} ${status}${md}`)
         msg.push(`   AppID: ${acc.appId}`)
       }
 
