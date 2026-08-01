@@ -8,11 +8,28 @@ XRK-AGT 的 QQ 官方机器人通道（[qq-group-bot](https://www.npmjs.com/pack
 
 ***
 
-## 安装
+## 拉取代码
+
+在 XRK-AGT 的 `core` 目录下执行（任选其一；**GitHub 为主仓库**）：
 
 ```bash
-# 在 XRK-AGT/core 下
+# GitHub（主）
 git clone --depth=1 https://github.com/3106961196/QQbot-Core.git
+
+# Gitee
+git clone --depth=1 https://gitee.com/duac/QQbot-Core.git
+
+# GitCode
+git clone --depth=1 https://gitcode.com/duac/QQbot-Core.git
+```
+
+| 平台 | 仓库地址 |
+|------|----------|
+| GitHub（主） | https://github.com/3106961196/QQbot-Core |
+| Gitee | https://gitee.com/duac/QQbot-Core |
+| GitCode | https://gitcode.com/duac/QQbot-Core |
+
+```bash
 cd QQbot-Core && pnpm install
 # 管理台产物（首次或改前端后）
 cd www/qqbot && pnpm install && pnpm build && cd ../..
