@@ -2,7 +2,6 @@ import path from "node:path"
 import { ulid } from "ulid"
 import QRCode from "qrcode"
 import imageSize from "image-size"
-import urlRegexSafe from "url-regex-safe"
 
 export class MessageBuilder {
   static MAX_CALLBACKS = 1000
@@ -30,7 +29,7 @@ export class MessageBuilder {
   }
 
   makeLog(msg) {
-    return Bot.String(msg).replace(/base64:\/\/.*?(,|]|")/g, "base64://...$1")
+    return AgentRuntime.String(msg).replace(/base64:\/\/.*?(,|]|")/g, "base64://...$1")
   }
 
   async makeRecord(file) {
@@ -41,13 +40,13 @@ export class MessageBuilder {
             const url = await bot.sdk.uploadRecord(file)
             if (url) return url
           } catch (err) {
-            Bot.makeLog('error', `Bot ${id} 语音上传错误`, 'QQBot', err)
+            AgentRuntime.makeLog('error', `Bot ${id} 语音上传错误`, 'QQBot', err)
           }
         }
       }
     }
 
-    const buffer = await Bot.Buffer(file)
+    const buffer = await AgentRuntime.Buffer(file)
     if (!Buffer.isBuffer(buffer)) return file
     
     const { isSilk, encode: encodeSilk } = await this.initSilkWasm()
@@ -57,10 +56,10 @@ export class MessageBuilder {
     try {
       const fs = await import("node:fs/promises")
       await fs.writeFile(convFile, buffer)
-      await Bot.exec(`ffmpeg -i "${convFile}" -f s16le -ar 48000 -ac 1 "${convFile}.pcm"`)
+      await AgentRuntime.exec(`ffmpeg -i "${convFile}" -f s16le -ar 48000 -ac 1 "${convFile}.pcm"`)
       file = Buffer.from((await encodeSilk(await fs.readFile(`${convFile}.pcm`), 48000)).data)
     } catch (err) {
-      Bot.makeLog('error', 'silk 转码错误', 'QQBot', err)
+      AgentRuntime.makeLog('error', 'silk 转码错误', 'QQBot', err)
     }
 
     for (const i of [convFile, `${convFile}.pcm`]) {
@@ -85,7 +84,7 @@ export class MessageBuilder {
             const image = await bot.sdk.uploadImage(file)
             if (image.url) return image
           } catch (err) {
-            Bot.makeLog('error', `Bot ${id} 图片上传错误`, 'QQBot', err)
+            AgentRuntime.makeLog('error', `Bot ${id} 图片上传错误`, 'QQBot', err)
           }
         }
       }
@@ -93,8 +92,8 @@ export class MessageBuilder {
   }
 
   async makeMarkdownImage(data, file, summary = "图片") {
-    const buffer = await Bot.Buffer(file)
-    const image = await this.makeBotImage(buffer) || { url: await Bot.fileToUrl(file) }
+    const buffer = await AgentRuntime.Buffer(file)
+    const image = await this.makeBotImage(buffer) || { url: await AgentRuntime.fileToUrl(file) }
 
     if (!image.width || !image.height) {
       try {
@@ -102,7 +101,7 @@ export class MessageBuilder {
         image.width = size.width
         image.height = size.height
       } catch (err) {
-        Bot.makeLog('error', '图片分辨率检测错误', data.self_id, err)
+        AgentRuntime.makeLog('error', '图片分辨率检测错误', data.self_id, err)
       }
     }
 
@@ -116,7 +115,7 @@ export class MessageBuilder {
     if (!this.sharp) return file
     try {
       const size = this.config?.imageLength * 1024 * 1024
-      const buffer = await Bot.Buffer(file, { http: true })
+      const buffer = await AgentRuntime.Buffer(file, { http: true })
 
       if (!Buffer.isBuffer(buffer)) return file
       if (buffer.length <= size) return buffer
@@ -125,12 +124,12 @@ export class MessageBuilder {
       do {
         quality -= 10
         output = await this.sharp(buffer).jpeg({ quality }).toBuffer()
-        Bot.makeLog('debug', `图片压缩完成 ${quality}%(${(output.length / 1024).toFixed(2)}KB)`, data.self_id)
+        AgentRuntime.makeLog('debug', `图片压缩完成 ${quality}%(${(output.length / 1024).toFixed(2)}KB)`, data.self_id)
       } while (output.length > size && quality > 10)
 
       return output
     } catch (err) {
-      Bot.makeLog('error', '图片压缩错误', data.self_id, err)
+      AgentRuntime.makeLog('error', '图片压缩错误', data.self_id, err)
       return file
     }
   }
@@ -244,7 +243,7 @@ export class MessageBuilder {
 
     for (let i of Array.isArray(msg) ? msg : [msg]) {
       if (typeof i === "object") i = { ...i }
-      else i = { type: "text", text: Bot.String(i) }
+      else i = { type: "text", text: AgentRuntime.String(i) }
 
       switch (i.type) {
         case "record":
@@ -257,7 +256,7 @@ export class MessageBuilder {
           messages.push([i])
           break
         case "file":
-          if (i.file) i.file = await Bot.fileToUrl(i.file, i)
+          if (i.file) i.file = await AgentRuntime.fileToUrl(i.file, i)
           content += await this.makeRawMarkdownText(data, `文件：${i.file}`, button)
           break
         case "at":
@@ -290,7 +289,7 @@ export class MessageBuilder {
           messages.push(Array.isArray(i.data) ? i.data : [i.data])
           break
         default:
-          content += await this.makeRawMarkdownText(data, Bot.String(i), button)
+          content += await this.makeRawMarkdownText(data, AgentRuntime.String(i), button)
       }
     }
 
@@ -387,7 +386,7 @@ export class MessageBuilder {
 
     for (let i of Array.isArray(msg) ? msg : [msg]) {
       if (typeof i === "object") i = { ...i }
-      else i = { type: "text", text: Bot.String(i) }
+      else i = { type: "text", text: AgentRuntime.String(i) }
 
       switch (i.type) {
         case "record":
@@ -400,7 +399,7 @@ export class MessageBuilder {
           messages.push([i])
           break
         case "file":
-          if (i.file) i.file = await Bot.fileToUrl(i.file, i)
+          if (i.file) i.file = await AgentRuntime.fileToUrl(i.file, i)
           button.push(...this.makeButtons(data, [[{ text: i.name || i.file, link: i.file }]]))
           content += "[文件(请点击按钮查看)]"
           break
@@ -442,7 +441,7 @@ export class MessageBuilder {
           messages.push(Array.isArray(i.data) ? i.data : [i.data])
           break
         default: {
-          const [text, temp] = this.makeMarkdownText(data, Bot.String(i), content, button)
+          const [text, temp] = this.makeMarkdownText(data, AgentRuntime.String(i), content, button)
           if (Array.isArray(temp)) {
             template = this.makeMarkdownTemplatePush(temp, template, templates)
             content = text
@@ -478,7 +477,7 @@ export class MessageBuilder {
 
     for (let i of Array.isArray(msg) ? msg : [msg]) {
       if (typeof i === "object") i = { ...i }
-      else i = { type: "text", text: Bot.String(i) }
+      else i = { type: "text", text: AgentRuntime.String(i) }
 
       switch (i.type) {
         case "at":
@@ -502,7 +501,7 @@ export class MessageBuilder {
           if (this.sharp && i.file) i.file = await this.compressImage(data, i.file)
           break
         case "file":
-          if (i.file) i.file = await Bot.fileToUrl(i.file, i)
+          if (i.file) i.file = await AgentRuntime.fileToUrl(i.file, i)
           i = { type: "text", text: `文件：${i.file}` }
           break
         case "reply":
@@ -526,7 +525,7 @@ export class MessageBuilder {
           i = i.data
           break
         default:
-          i = { type: "text", text: Bot.String(i) }
+          i = { type: "text", text: AgentRuntime.String(i) }
       }
 
       if (i.type === "text" && i.text) {
@@ -564,7 +563,7 @@ export class MessageBuilder {
 
     for (let i of Array.isArray(msg) ? msg : [msg]) {
       if (typeof i === "object") i = { ...i }
-      else i = { type: "text", text: Bot.String(i) }
+      else i = { type: "text", text: AgentRuntime.String(i) }
 
       switch (i.type) {
         case "at":
@@ -582,7 +581,7 @@ export class MessageBuilder {
         case "record":
         case "video":
         case "file":
-          if (i.file) i.file = await Bot.fileToUrl(i.file, i)
+          if (i.file) i.file = await AgentRuntime.fileToUrl(i.file, i)
           i = { type: "text", text: `文件：${i.file}` }
           break
         case "reply":
@@ -605,7 +604,7 @@ export class MessageBuilder {
           i = i.data
           break
         default:
-          i = { type: "text", text: Bot.String(i) }
+          i = { type: "text", text: AgentRuntime.String(i) }
       }
 
       if (i.type === "text" && i.text) {

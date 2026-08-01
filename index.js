@@ -1,49 +1,25 @@
-import QQBotConfig from './commonconfig/qqbot.js';
+import CommonConfigRegistry from '../../../src/infrastructure/commonconfig/loader.js'
+import { normalizeError } from '../../../src/utils/normalize-error.js'
 
-Bot.makeLog('info', '正在加载 QQBot 适配器 Core', 'QQbot-Core');
+AgentRuntime.makeLog('info', '正在加载 QQBot 适配器 Core', 'QQbot-Core')
 
-(async () => {
+;(async () => {
   try {
-    const config = new QQBotConfig();
+    const config = CommonConfigRegistry.get('qqbot')
+    if (!config) {
+      AgentRuntime.makeLog('warn', 'QQBot 配置实例未注册（commonconfig 未加载？）', 'QQbot-Core')
+      return
+    }
 
     if (!await config.exists()) {
-      const defaultData = {
-        tips: "QQBot 官方机器人配置",
-        accounts: [],
-        bot: {
-          sandbox: false,
-          maxRetry: 10,
-          timeout: 30000
-        },
-        toQRCode: true,
-        toCallback: true,
-        toBotUpload: true,
-        hideGuildRecall: false,
-        imageLength: 3,
-        markdown: {
-          template: ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j']
-        }
-      };
-
-      await config.write(defaultData, { backup: false, validate: false });
-
-      Bot.makeLog(
-        'info',
-        `已自动创建 QQBot 配置文件: ${config.getFilePath()}`,
-        'QQbot-Core'
-      );
-      Bot.makeLog(
-        'info',
-        `请编辑配置文件添加机器人账号: appId 和 clientSecret`,
-        'QQbot-Core'
-      );
+      // read() 会从 default/ 模板取默认值；write 落盘到 data/QQBot.json
+      const data = await config.read()
+      await config.write(data, { backup: false, validate: false })
+      AgentRuntime.makeLog('info', `已自动创建 QQBot 配置文件: ${config.getFilePath()}`, 'QQbot-Core')
+      AgentRuntime.makeLog('info', '请编辑配置或打开 Web 管理页添加 AppID / ClientSecret', 'QQbot-Core')
     }
-  } catch (error) {
-    Bot.makeLog(
-      'error',
-      `QQBot 配置初始化失败: ${error.message}`,
-      'QQbot-Core',
-      error
-    );
+  } catch (err) {
+    const error = normalizeError(err)
+    AgentRuntime.makeLog('error', `QQBot 配置初始化失败: ${error.message}`, 'QQbot-Core', error)
   }
-})();
+})()

@@ -1,49 +1,43 @@
-import EventListenerBase from '../../../src/infrastructure/listener/base.js'
+import ListenerBase from '../../../src/infrastructure/listener/base.js'
+import { normalizeError } from '../../../src/utils/normalize-error.js'
 
-export default class QQBotEvent extends EventListenerBase {
+/**
+ * QQBot 官方机器人事件监听
+ * Tasker 发出 qqbot.message / qqbot.notice / qqbot.connect 后由此进入插件链
+ */
+export default class QQBotEvent extends ListenerBase {
   constructor() {
     super('qqbot')
-    this.prefix = ''
-    this.event = [
-      'message.private.friend',
-      'message.private.callback',
-      'message.group.normal',
-      'message.guild',
-      'connect'
-    ]
   }
 
-  async execute(e) {
-    if (!e) return false
-
-    Bot.makeLog('debug', `QQBotEvent.execute: post_type=${e.post_type}, message_type=${e.message_type}, reply=${typeof e.reply}`, e.self_id)
-
-    this.ensureEventId(e)
-    if (!this.markProcessed(e)) return false
-
-    this.markAdapter(e, { isQQBot: true })
-
-    if (!this.normalizeEvent(e)) return false
-
-    Bot.makeLog('debug', `QQBotEvent: 处理事件, reply=${typeof e.reply}, user_id=${e.user_id}`, e.self_id)
-
-    return await this.plugins.deal(e)
+  async init() {
+    const bot = this.bot || AgentRuntime
+    for (const t of ['message', 'notice', 'connect', 'disconnect']) {
+      bot.on(`qqbot.${t}`, (e) => this.handleEvent(e))
+    }
   }
 
-  normalizeEvent(e) {
-    const bot = e.bot || (e.self_id ? Bot[e.self_id] : null)
-    if (!bot) {
-      Bot.makeLog('warn', `Bot对象不存在，忽略事件：${e.self_id}`, 'QQBotEvent')
+  async handleEvent(e) {
+    if (!e) return
+    try {
+      if (!this.normalizeEventBase(e)) return
+      await this.plugins.deal(e)
+    } catch (err) {
+      const error = normalizeError(err)
+      AgentRuntime.makeLog('error', `处理 QQBot 事件失败: ${error.message}`, e?.self_id, error)
+    }
+  }
+
+  normalizeEventBase(e) {
+    e.bot = e.bot || (e.self_id ? AgentRuntime[e.self_id] : null)
+    if (!e.bot && e.post_type === 'message') {
+      AgentRuntime.makeLog('warn', `AgentRuntime 账号不存在，忽略事件：${e.self_id}`, 'QQBotEvent')
       return false
     }
 
-    try {
-      if (!e.bot) {
-        Object.defineProperty(e, 'bot', { value: bot, writable: true, configurable: true })
-      }
-    } catch {
-      // 属性已存在，忽略
-    }
+    this.ensureEventId(e)
+    if (!this.markProcessed(e)) return false
+    this.markAdapter(e, { isQQBot: true })
 
     if (!e.raw_message && Array.isArray(e.message) && e.message.length > 0) {
       e.raw_message = e.message
@@ -60,13 +54,11 @@ export default class QQBotEvent extends EventListenerBase {
         .join('')
     }
 
-    if (!e.msg && e.raw_message) {
-      e.msg = e.raw_message
-    }
+    if (!e.msg && e.raw_message) e.msg = e.raw_message
+    if (!e.self_id && e.bot?.uin) e.self_id = e.bot.uin
 
-    if (!e.self_id && bot.uin) {
-      e.self_id = bot.uin
-    }
+    e.isPrivate = e.message_type === 'private' || (!e.group_id && !!e.user_id)
+    e.isGroup = e.message_type === 'group' || !!e.group_id
 
     return true
   }

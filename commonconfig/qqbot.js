@@ -1,5 +1,6 @@
 import ConfigBase from '../../../src/infrastructure/commonconfig/commonconfig.js';
 
+/** 模板：core/QQbot-Core/default/qqbot.json → 运行时：data/QQBot.json */
 export default class QQBotConfig extends ConfigBase {
   #writeLock = Promise.resolve()
 
@@ -9,6 +10,7 @@ export default class QQBotConfig extends ConfigBase {
       displayName: 'QQBot配置',
       description: 'QQBot官方机器人配置管理',
       filePath: 'data/QQBot.json',
+      defaultTemplatePath: 'core/QQbot-Core/default/qqbot.json',
       fileType: 'json',
       schema: {
         fields: {
@@ -18,6 +20,13 @@ export default class QQBotConfig extends ConfigBase {
             description: '配置提示信息',
             default: 'QQBot 官方机器人配置',
             component: 'Input'
+          },
+          adminPassword: {
+            type: 'string',
+            label: '管理密码',
+            description: 'Web 管理页密码登录（可选；推荐临时 Key）',
+            default: '',
+            component: 'Password'
           },
           accounts: {
             type: 'array',

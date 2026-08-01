@@ -15,10 +15,14 @@
 
 ## 拉取代码
 
+在 XRK-AGT 的 `core` 目录下执行：
+
 ```bash
-# 在 XRK-AGT 的 core 目录下执行以下命令拉取代码
-git clone https://github.com/3106961196/QQbot-Core.git
+git clone --depth=1 https://github.com/3106961196/QQbot-Core.git
+cd QQbot-Core && pnpm install
 ```
+
+依赖：Node.js **≥ 26**、XRK-AGT 主仓已可启动。可选：`sharp`（图片压缩）。
 
 ***
 
@@ -38,7 +42,7 @@ git clone https://github.com/3106961196/QQbot-Core.git
 
 ## Web 管理（推荐）
 
-访问 `/core/QQbot-Core/` 进入 Web 管理页面，可视化管理 QQ 机器人。
+访问 `/core/QQbot-Core/` 进入 Web 管理页面。
 
 ### 快速开始
 
@@ -53,21 +57,25 @@ git clone https://github.com/3106961196/QQbot-Core.git
 
 | 方式 | 说明 |
 |------|------|
-| **临时 Key（推荐）** | 点击「点击获取」按钮，查看后台日志获取临时 Key，有效期 5 分钟 |
-| 密码登录 | 在 `QQBot.json` 中配置 `adminPassword` |
+| **临时 Key（推荐）** | 点击「点击获取」，查看后台日志，有效期 5 分钟 |
+| 密码登录 | 在 `data/QQBot.json` 中配置 `adminPassword` |
 
 ***
 
-## 配置文件方式
+## 配置
 
-配置路径：`data/QQBot.json`
+| 路径 | 说明 |
+|------|------|
+| `core/QQbot-Core/default/qqbot.json` | 默认模板（入库） |
+| `data/QQBot.json` | 运行时配置（首次自动从模板落盘） |
+| `core/QQbot-Core/commonconfig/qqbot.js` | CommonConfig schema |
 
 ### 必填项
 
 | 配置项 | 说明 |
 |--------|------|
-| `accounts[].appId` | QQ 开放平台应用的 AppID |
-| `accounts[].clientSecret` | QQ 开放平台应用的 ClientSecret |
+| `accounts[].appId` | QQ 开放平台 AppID |
+| `accounts[].clientSecret` | ClientSecret |
 | `accounts[].enabled: true` | 否则 Tasker 不连接该账号 |
 
 ### 示例
@@ -97,24 +105,19 @@ git clone https://github.com/3106961196/QQbot-Core.git
 | `toBotUpload` | 使用 Bot 上传资源 | `true` |
 | `hideGuildRecall` | 撤回频道消息时隐藏 | `false` |
 | `imageLength` | 图片压缩阈值（MB） | `3` |
+| `markdown.<账号id>` | 该账号 Markdown：模板 ID 或 `"raw"` | — |
 
-> 若未配置账号或全部 `enabled: false`，日志出现 `QQBot 未启用，跳过` 属正常现象。
+> 若未配置账号或全部 `enabled: false`，属正常现象。
 
 ***
 
-## 管理员权限配置
+## 管理员权限
 
-QQBot 的用户ID格式为 `{机器人AppID}:{用户OpenID}`，与普通QQ号不同。
+QQBot 的用户 ID 为 `{账号id}:{用户OpenID}`（账号 id 一般为 `name`，默认同 AppID）。
 
-### 获取用户ID
-
-1. 让目标用户给机器人发送一条消息
-2. 查看日志中的 `好友消息：[AppID:OpenID]` 或 `群消息：[群号, AppID:OpenID]`
-3. 复制方括号内的完整ID
-
-### 配置管理员
-
-编辑 `data/server_bots/{端口}/chatbot.yaml`：
+1. 让目标用户给机器人发一条消息
+2. 日志中出现 `好友消息：[AppID:OpenID]` 或群消息中的完整 ID
+3. 写入 `data/server_bots/{端口}/chatbot.yaml`：
 
 ```yaml
 master:
@@ -122,9 +125,11 @@ master:
     - "123456789:123456789ABCDEFGHIJKLMNOPQRSTUVW"
 ```
 
+也可在 Web 管理页的机器人设置里添加主人。
+
 ***
 
-## 指令（仅管理员）
+## 指令（仅主人）
 
 | 指令 | 说明 |
 |------|------|
@@ -136,17 +141,37 @@ master:
 
 ***
 
-## 事件
+## 事件与架构
+
+Tasker 发出 `qqbot.message` / `qqbot.notice` / `qqbot.connect`，由 `events/qqbot.js` 进入插件链；`plugin/qqbot-enhancer.js` 挂载 `friend` / `group`。
 
 | 事件 | 含义 |
 |------|------|
-| `message.private.friend` | 好友私聊消息 |
-| `message.private.callback` | 按钮点击回调（私聊） |
-| `message.group.normal` | 群聊消息（@机器人） |
-| `message.guild` | 频道消息 |
-| `connect` | 机器人连接成功 |
+| `qqbot.message` | 私聊 / 群 / 频道 / 按钮回调等消息 |
+| `qqbot.notice` | 通知（含按钮 action） |
+| `qqbot.connect` | 机器人连接成功 |
 
-所有场景统一使用 **`e.reply(...)`** 回复。
+业务插件统一使用 **`e.reply(...)`** 回复。全局对象为 **`AgentRuntime`**（勿再写 `Bot`）。
+
+***
+
+## 项目结构
+
+```
+QQbot-Core/
+├── commonconfig/qqbot.js
+├── default/qqbot.json
+├── events/qqbot.js
+├── http/qqbot-api.js
+├── plugin/
+│   ├── qqbot-adapter.js    # 管理指令
+│   └── qqbot-enhancer.js   # 事件增强
+├── tasker/
+│   ├── QQBotTasker.js
+│   ├── message-handler.js
+│   └── message-builder.js
+└── www/                    # /core/QQbot-Core/ 管理页
+```
 
 ***
 

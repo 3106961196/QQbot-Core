@@ -23,21 +23,22 @@ export class MessageHandler {
     const sendMsg = async () => {
       for (const i of msgs) {
         try {
-          Bot.makeLog('debug', `发送消息: ${this.messageBuilder.makeLog(i)}`, data.self_id)
+          AgentRuntime.makeLog('debug', `发送消息: ${this.messageBuilder.makeLog(i)}`, data.self_id)
           const ret = await send(i)
-          Bot.makeLog('debug', `发送消息返回: ${Bot.String(ret)}`, data.self_id)
+          AgentRuntime.makeLog('debug', `发送消息返回: ${AgentRuntime.String(ret)}`, data.self_id)
           rets.data.push(ret)
           if (ret.id) rets.message_id.push(ret.id)
         } catch (err) {
-          Bot.makeLog('error', `发送消息错误: ${err.message}`, data.self_id, err)
+          AgentRuntime.makeLog('error', `发送消息错误: ${err.message}`, data.self_id, err)
           rets.error.push(err)
           return false
         }
       }
     }
 
-    if (this.config.markdown[data.self_id]) {
-      if (this.config.markdown[data.self_id] === "raw") {
+    const mdMode = this.config?.markdown?.[data.self_id]
+    if (mdMode) {
+      if (mdMode === "raw") {
         msgs = await this.messageBuilder.makeRawMarkdownMsg(data, msg)
       } else {
         msgs = await this.messageBuilder.makeMarkdownMsg(data, msg)
@@ -77,13 +78,13 @@ export class MessageHandler {
 
     for (const i of msgs) {
       try {
-        Bot.makeLog('debug', `发送消息: ${this.messageBuilder.makeLog(i)}`, data.self_id)
+        AgentRuntime.makeLog('debug', `发送消息: ${this.messageBuilder.makeLog(i)}`, data.self_id)
         const ret = await send(i)
-        Bot.makeLog('debug', `发送消息返回: ${Bot.String(ret)}`, data.self_id)
+        AgentRuntime.makeLog('debug', `发送消息返回: ${AgentRuntime.String(ret)}`, data.self_id)
         rets.data.push(ret)
         if (ret.id) rets.message_id.push(ret.id)
       } catch (err) {
-        Bot.makeLog('error', `发送消息错误: ${err.message}`, data.self_id, err)
+        AgentRuntime.makeLog('error', `发送消息错误: ${err.message}`, data.self_id, err)
         rets.error.push(err)
       }
     }
@@ -93,7 +94,7 @@ export class MessageHandler {
   async sendDirectMsg(data, msg) {
     if (!data.guild_id) {
       if (!data.src_guild_id) {
-        Bot.makeLog('error', `发送频道私聊消息失败：[${data.user_id}] 不存在来源频道信息`, data.self_id)
+        AgentRuntime.makeLog('error', `发送频道私聊消息失败：[${data.user_id}] 不存在来源频道信息`, data.self_id)
         return false
       }
       const dms = await data.bot.sdk.createDirectSession(data.src_guild_id, data.user_id)
@@ -115,7 +116,7 @@ export class MessageHandler {
       try {
         msgs.push(await recall(id))
       } catch (err) {
-        Bot.makeLog('debug', `撤回消息错误: ${id}`, data.self_id, err)
+        AgentRuntime.makeLog('debug', `撤回消息错误: ${id}`, data.self_id, err)
         msgs.push(false)
       }
     }
@@ -123,22 +124,22 @@ export class MessageHandler {
   }
 
   recallFriendMsg(data, message_id) {
-    Bot.makeLog('info', `撤回好友消息：[${data.user_id}] ${message_id}`, data.self_id)
+    AgentRuntime.makeLog('info', `撤回好友消息：[${data.user_id}] ${message_id}`, data.self_id)
     return this.recallMsg(data, id => data.bot.sdk.recallFriendMessage(data.user_id, id), message_id)
   }
 
   recallGroupMsg(data, message_id) {
-    Bot.makeLog('info', `撤回群消息：[${data.group_id}] ${message_id}`, data.self_id)
+    AgentRuntime.makeLog('info', `撤回群消息：[${data.group_id}] ${message_id}`, data.self_id)
     return this.recallMsg(data, id => data.bot.sdk.recallGroupMessage(data.group_id, id), message_id)
   }
 
   recallDirectMsg(data, message_id, hide = this.config.hideGuildRecall) {
-    Bot.makeLog('info', `撤回${hide ? "并隐藏" : ""}频道私聊消息：[${data.guild_id}] ${message_id}`, data.self_id)
+    AgentRuntime.makeLog('info', `撤回${hide ? "并隐藏" : ""}频道私聊消息：[${data.guild_id}] ${message_id}`, data.self_id)
     return this.recallMsg(data, id => data.bot.sdk.recallDirectMessage(data.guild_id, id, hide), message_id)
   }
 
   recallGuildMsg(data, message_id, hide = this.config.hideGuildRecall) {
-    Bot.makeLog('info', `撤回${hide ? "并隐藏" : ""}频道消息：[${data.channel_id}] ${message_id}`, data.self_id)
+    AgentRuntime.makeLog('info', `撤回${hide ? "并隐藏" : ""}频道消息：[${data.channel_id}] ${message_id}`, data.self_id)
     return this.recallMsg(data, id => data.bot.sdk.recallGuildMessage(data.channel_id, id, hide), message_id)
   }
 
@@ -147,9 +148,9 @@ export class MessageHandler {
     else if (user_id.startsWith("qg_")) return this.pickGuildFriend(id, user_id)
 
     const i = {
-      ...Bot[id].fl.get(user_id),
+      ...AgentRuntime[id].fl.get(user_id),
       self_id: id,
-      bot: Bot[id],
+      bot: AgentRuntime[id],
       user_id: user_id.replace(`${id}${this.sep}`, ""),
     }
     return {
@@ -166,10 +167,10 @@ export class MessageHandler {
     else if (user_id.startsWith("qg_")) return this.pickGuildMember(id, group_id, user_id)
 
     const i = {
-      ...Bot[id].fl.get(user_id),
-      ...Bot[id].gml.get(group_id)?.get(user_id),
+      ...AgentRuntime[id].fl.get(user_id),
+      ...AgentRuntime[id].gml.get(group_id)?.get(user_id),
       self_id: id,
-      bot: Bot[id],
+      bot: AgentRuntime[id],
       user_id: user_id.replace(`${id}${this.sep}`, ""),
       group_id: group_id.replace(`${id}${this.sep}`, ""),
     }
@@ -181,9 +182,9 @@ export class MessageHandler {
     else if (group_id.startsWith("qg_")) return this.pickGuild(id, group_id)
 
     const i = {
-      ...Bot[id].gl.get(group_id),
+      ...AgentRuntime[id].gl.get(group_id),
       self_id: id,
-      bot: Bot[id],
+      bot: AgentRuntime[id],
       group_id: group_id.replace(`${id}${this.sep}`, ""),
     }
     return {
@@ -197,9 +198,9 @@ export class MessageHandler {
 
   pickGuildFriend(id, user_id) {
     const i = {
-      ...Bot[id].fl.get(user_id),
+      ...AgentRuntime[id].fl.get(user_id),
       self_id: id,
-      bot: Bot[id],
+      bot: AgentRuntime[id],
       user_id: user_id.replace(/^qg_/, ""),
     }
     return {
@@ -212,10 +213,10 @@ export class MessageHandler {
   pickGuildMember(id, group_id, user_id) {
     const guild_id = group_id.replace(/^qg_/, "").split("-")
     const i = {
-      ...Bot[id].fl.get(user_id),
-      ...Bot[id].gml.get(group_id)?.get(user_id),
+      ...AgentRuntime[id].fl.get(user_id),
+      ...AgentRuntime[id].gml.get(group_id)?.get(user_id),
       self_id: id,
-      bot: Bot[id],
+      bot: AgentRuntime[id],
       src_guild_id: guild_id[0],
       src_channel_id: guild_id[1],
       user_id: user_id.replace(/^qg_/, ""),
@@ -231,9 +232,9 @@ export class MessageHandler {
   pickGuild(id, group_id) {
     const guild_id = group_id.replace(/^qg_/, "").split("-")
     const i = {
-      ...Bot[id].gl.get(group_id),
+      ...AgentRuntime[id].gl.get(group_id),
       self_id: id,
-      bot: Bot[id],
+      bot: AgentRuntime[id],
       guild_id: guild_id[0],
       channel_id: guild_id[1],
     }
@@ -248,10 +249,10 @@ export class MessageHandler {
 
   async makeFriendMessage(data, event) {
     data.sender = { user_id: `${data.self_id}${this.sep}${event.sender.user_id}` }
-    Bot.makeLog('info', `好友消息：[${data.user_id}] ${data.raw_message}`, data.self_id)
-    Bot.makeLog('debug', `makeFriendMessage: event.sender=${Bot.String(event.sender)}`, data.self_id)
+    AgentRuntime.makeLog('info', `好友消息：[${data.user_id}] ${data.raw_message}`, data.self_id)
+    AgentRuntime.makeLog('debug', `makeFriendMessage: event.sender=${AgentRuntime.String(event.sender)}`, data.self_id)
     data.reply = msg => {
-      Bot.makeLog('info', `reply called: user_id=${event.sender.user_id}`, data.self_id)
+      AgentRuntime.makeLog('info', `reply called: user_id=${event.sender.user_id}`, data.self_id)
       return this.sendFriendMsg({ ...data, user_id: event.sender.user_id }, msg, { id: data.message_id })
     }
     await this.setFriendMap(data)
@@ -260,7 +261,7 @@ export class MessageHandler {
   async makeGroupMessage(data, event) {
     data.sender = { user_id: `${data.self_id}${this.sep}${event.sender.user_id}` }
     data.group_id = `${data.self_id}${this.sep}${event.group_id}`
-    Bot.makeLog('info', `群消息：[${data.group_id}, ${data.user_id}] ${data.raw_message}`, data.self_id)
+    AgentRuntime.makeLog('info', `群消息：[${data.group_id}, ${data.user_id}] ${data.raw_message}`, data.self_id)
     data.reply = msg => this.sendGroupMsg({ ...data, group_id: event.group_id }, msg, { id: data.message_id })
     data.message.unshift({ type: "at", qq: data.self_id })
     await this.setGroupMap(data)
@@ -277,7 +278,7 @@ export class MessageHandler {
       channel_id: event.channel_id,
       src_guild_id: event.src_guild_id,
     }
-    Bot.makeLog('info', `频道私聊消息：[${data.sender.nickname}(${data.user_id})] ${data.raw_message}`, data.self_id)
+    AgentRuntime.makeLog('info', `频道私聊消息：[${data.sender.nickname}(${data.user_id})] ${data.raw_message}`, data.self_id)
     data.reply = msg => this.sendDirectMsg({
       ...data,
       user_id: event.user_id,
@@ -300,7 +301,7 @@ export class MessageHandler {
       src_channel_id: event.channel_id,
     }
     data.group_id = `qg_${event.guild_id}-${event.channel_id}`
-    Bot.makeLog('info', `频道消息：[${data.group_id}, ${data.sender.nickname}(${data.user_id})] ${data.raw_message}`, data.self_id)
+    AgentRuntime.makeLog('info', `频道消息：[${data.group_id}, ${data.sender.nickname}(${data.user_id})] ${data.raw_message}`, data.self_id)
     data.reply = msg => this.sendGuildMsg({
       ...data,
       guild_id: event.guild_id,
@@ -329,7 +330,7 @@ export class MessageHandler {
   async makeMessage(id, event) {
     const data = {
       raw: event,
-      bot: Bot[id],
+      bot: AgentRuntime[id],
       self_id: id,
       post_type: event.post_type,
       message_type: event.message_type,
@@ -361,17 +362,17 @@ export class MessageHandler {
         await this.makeGuildMessage(data, event)
         break
       default:
-        Bot.makeLog('warn', `未知消息类型: ${Bot.String(event)}`, id)
+        AgentRuntime.makeLog('warn', `未知消息类型: ${AgentRuntime.String(event)}`, id)
         return
     }
 
-    Bot.em(`${data.post_type}.${data.message_type}.${data.sub_type}`, data)
+    AgentRuntime.em(`qqbot.${data.post_type}`, data)
   }
 
   async makeBotCallback(id, event, callback) {
     const data = {
       raw: event,
-      bot: Bot[callback.self_id],
+      bot: AgentRuntime[callback.self_id],
       self_id: callback.self_id,
       post_type: "message",
       message_id: event.event_id ? `event_${event.event_id}` : event.notice_id,
@@ -392,33 +393,33 @@ export class MessageHandler {
       data.group_id = callback.group_id
       data.group = data.bot.pickGroup(callback.group_id)
       data.group_name = data.group.name
-      data.friend = Bot[id].pickFriend(data.user_id)
+      data.friend = AgentRuntime[id].pickFriend(data.user_id)
       if (data.friend.real_id) {
         data.friend = data.bot.pickFriend(data.friend.real_id)
         data.member = data.group.pickMember(data.friend.user_id)
         data.sender = { ...await data.member.getInfo() || data.member }
       } else {
-        if (Bot[id].callback[data.user_id]) return event.reply(3)
-        Bot[id].callback[data.user_id] = true
+        if (AgentRuntime[id].callback[data.user_id]) return event.reply(3)
+        AgentRuntime[id].callback[data.user_id] = true
         let msg = `请先发送 #QQBot绑定用户${data.user_id}`
         const real_id = callback.message.replace(/^#[Qq]+[Bb]ot绑定用户确认/, "").trim()
         if (this.bind_user[real_id] === data.user_id) {
-          await Bot[id].fl.set(data.user_id, { ...Bot[id].fl.get(data.user_id), real_id })
+          await AgentRuntime[id].fl.set(data.user_id, { ...AgentRuntime[id].fl.get(data.user_id), real_id })
           msg = `绑定成功 ${data.user_id} → ${real_id}`
         }
         event.reply(0)
         return data.group.sendMsg(msg)
       }
-      Bot.makeLog('info', `群按钮点击事件：[${data.group_name}(${data.group_id}), ${data.sender.nickname}(${data.user_id})] ${data.raw_message}`, data.self_id)
+      AgentRuntime.makeLog('info', `群按钮点击事件：[${data.group_name}(${data.group_id}), ${data.sender.nickname}(${data.user_id})] ${data.raw_message}`, data.self_id)
     } else {
-      await Bot[id].fl.set(data.user_id, { ...Bot[id].fl.get(data.user_id), real_id: callback.user_id })
+      await AgentRuntime[id].fl.set(data.user_id, { ...AgentRuntime[id].fl.get(data.user_id), real_id: callback.user_id })
       data.friend = data.bot.pickFriend(callback.user_id)
       data.sender = { ...await data.friend.getInfo() || data.friend }
-      Bot.makeLog('info', `好友按钮点击事件：[${data.sender.nickname}(${data.user_id})] ${data.raw_message}`, data.self_id)
+      AgentRuntime.makeLog('info', `好友按钮点击事件：[${data.sender.nickname}(${data.user_id})] ${data.raw_message}`, data.self_id)
     }
 
     event.reply(0)
-    Bot.em(`${data.post_type}.${data.message_type}.${data.sub_type}`, data)
+    AgentRuntime.em(`qqbot.${data.post_type}`, data)
   }
 
   async makeCallback(id, event) {
@@ -427,13 +428,13 @@ export class MessageHandler {
       try {
         return await reply(...args)
       } catch (err) {
-        Bot.makeLog('debug', `回复按钮点击事件错误`, id, err)
+        AgentRuntime.makeLog('debug', `回复按钮点击事件错误`, id, err)
       }
     }
 
     const data = {
       raw: event,
-      bot: Bot[id],
+      bot: AgentRuntime[id],
       self_id: id,
       post_type: "message",
       message_id: event.event_id ? `event_${event.event_id}` : event.notice_id,
@@ -475,29 +476,29 @@ export class MessageHandler {
     switch (data.message_type) {
       case "friend":
         data.message_type = "private"
-        Bot.makeLog('info', `好友按钮点击事件：[${data.user_id}] ${data.raw_message}`, data.self_id)
+        AgentRuntime.makeLog('info', `好友按钮点击事件：[${data.user_id}] ${data.raw_message}`, data.self_id)
         data.reply = msg => this.sendFriendMsg({ ...data, user_id: event.operator_id }, msg, { id: data.message_id })
         await this.setFriendMap(data)
         break
       case "group":
         data.group_id = `${id}${this.sep}${event.group_id}`
-        Bot.makeLog('info', `群按钮点击事件：[${data.group_id}, ${data.user_id}] ${data.raw_message}`, data.self_id)
+        AgentRuntime.makeLog('info', `群按钮点击事件：[${data.group_id}, ${data.user_id}] ${data.raw_message}`, data.self_id)
         data.reply = msg => this.sendGroupMsg({ ...data, group_id: event.group_id }, msg, { id: data.message_id })
         await this.setGroupMap(data)
         break
       case "guild":
         break
       default:
-        Bot.makeLog('warn', `未知按钮点击事件: ${Bot.String(event)}`, data.self_id)
+        AgentRuntime.makeLog('warn', `未知按钮点击事件: ${AgentRuntime.String(event)}`, data.self_id)
     }
 
-    Bot.em(`${data.post_type}.${data.message_type}.${data.sub_type}`, data)
+    AgentRuntime.em(`qqbot.${data.post_type}`, data)
   }
 
   makeNotice(id, event) {
     const data = {
       raw: event,
-      bot: Bot[id],
+      bot: AgentRuntime[id],
       self_id: id,
       post_type: event.post_type,
       notice_type: event.notice_type,
@@ -518,7 +519,7 @@ export class MessageHandler {
       case "member.update":
         break
       default:
-        Bot.makeLog('warn', `未知通知: ${Bot.String(event)}`, id)
+        AgentRuntime.makeLog('warn', `未知通知: ${AgentRuntime.String(event)}`, id)
     }
   }
 }

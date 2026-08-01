@@ -1,11 +1,12 @@
-import plugin from '../../../src/infrastructure/plugins/plugin.js'
+import PluginBase from '../../../src/infrastructure/plugins/plugin-base.js'
 import ConfigLoader from '../../../src/infrastructure/commonconfig/loader.js'
+import { normalizeError } from '../../../src/utils/normalize-error.js'
 
-const getTasker = () => Bot.tasker.find(t => t.id === 'QQBot')
-
+const getTasker = () => AgentRuntime.tasker.find(t => t.id === 'QQBot')
 const getConfigInstance = () => ConfigLoader.get('qqbot')
+const botIdOf = (account) => account.name || account.appId
 
-export class QQBotAdapter extends plugin {
+export class QQBotAdapter extends PluginBase {
   constructor() {
     super({
       name: 'QQBotAdapter',
@@ -38,7 +39,7 @@ export class QQBotAdapter extends plugin {
           fnc: 'disableAccount',
           permission: 'master',
         },
-      ]
+      ],
     })
   }
 
@@ -49,10 +50,10 @@ export class QQBotAdapter extends plugin {
         await e.reply('QQBot配置实例未找到')
         return false
       }
-      
+
       const accounts = await config.listAccounts()
       const tasker = getTasker()
-      
+
       if (accounts.length === 0) {
         await e.reply('暂无QQBot账号配置\n使用 #QQBot添加账号 AppID:ClientSecret 添加账号')
         return true
@@ -61,17 +62,18 @@ export class QQBotAdapter extends plugin {
       const msg = ['QQBot账号列表:', '']
       for (let i = 0; i < accounts.length; i++) {
         const acc = accounts[i]
-        const isOnline = tasker && tasker.bots.has(acc.appId)
+        const id = botIdOf(acc)
+        const isOnline = tasker && tasker.bots.has(id)
         const status = isOnline ? '🟢 在线' : (acc.enabled !== false ? '⚪ 离线' : '❌ 禁用')
         const md = acc.markdownSupport ? ' [MD]' : ''
-        msg.push(`${i + 1}. [${acc.name}] ${status}${md}`)
+        msg.push(`${i + 1}. [${acc.name || acc.appId}] ${status}${md}`)
         msg.push(`   AppID: ${acc.appId}`)
       }
-      
+
       await e.reply(msg.join('\n'))
       return true
     } catch (err) {
-      await e.reply(`获取账号列表失败: ${err.message}`)
+      await e.reply(`获取账号列表失败: ${normalizeError(err).message}`)
       return false
     }
   }
@@ -90,36 +92,34 @@ export class QQBotAdapter extends plugin {
         await e.reply('QQBot配置实例未找到')
         return false
       }
-      
+
       const account = {
         name: appId,
         appId,
         clientSecret,
         enabled: true,
-        markdownSupport: false
+        markdownSupport: false,
       }
-      
-      const accounts = await config.addAccount(account)
+
+      await config.addAccount(account)
       const tasker = getTasker()
-      
+
       if (tasker) {
-        const existingAccount = accounts.find(a => a.appId === appId)
-        if (existingAccount && existingAccount.enabled !== false) {
-          await tasker.disconnect(appId)
-        }
+        const botId = botIdOf(account)
+        if (tasker.bots.has(botId)) await tasker.disconnect(botId)
         const success = await tasker.connect(account)
-        if (success) {
-          await e.reply(`QQBot账号 ${appId} 已添加并连接成功`)
-        } else {
-          await e.reply(`QQBot账号 ${appId} 已添加，但连接失败`)
-        }
+        await e.reply(
+          success
+            ? `QQBot账号 ${appId} 已添加并连接成功`
+            : `QQBot账号 ${appId} 已添加，但连接失败`,
+        )
       } else {
         await e.reply(`QQBot账号 ${appId} 已添加`)
       }
-      
+
       return true
     } catch (err) {
-      await e.reply(`添加账号失败: ${err.message}`)
+      await e.reply(`添加账号失败: ${normalizeError(err).message}`)
       return false
     }
   }
@@ -128,14 +128,14 @@ export class QQBotAdapter extends plugin {
     try {
       const match = e.msg.match(/^#QQBot删除账号\s*(\S+)$/)
       if (!match) return false
-      
+
       const appId = match[1]
       const config = getConfigInstance()
       if (!config) {
         await e.reply('QQBot配置实例未找到')
         return false
       }
-      
+
       const accounts = await config.listAccounts()
       if (accounts.length === 0) {
         await e.reply('暂无可删除的QQBot账号')
@@ -147,44 +147,43 @@ export class QQBotAdapter extends plugin {
         await e.reply(`未找到QQBot账号 ${appId}`)
         return true
       }
-      
-      await config.removeAccount(account.appId)
-      
+
       const tasker = getTasker()
-      if (tasker) {
-        await tasker.disconnect(account.appId)
-        await e.reply(`QQBot账号 ${appId} 已删除并断开连接`)
-      } else {
-        await e.reply(`QQBot账号 ${appId} 已删除`)
-      }
-      
+      if (tasker) await tasker.disconnect(botIdOf(account))
+      await config.removeAccount(account.appId)
+
+      await e.reply(
+        tasker
+          ? `QQBot账号 ${appId} 已删除并断开连接`
+          : `QQBot账号 ${appId} 已删除`,
+      )
       return true
     } catch (err) {
-      await e.reply(`删除账号失败: ${err.message}`)
+      await e.reply(`删除账号失败: ${normalizeError(err).message}`)
       return false
     }
   }
 
   async enableAccount(e) {
-    return await this.toggleAccount(e, true)
+    return this.toggleAccount(e, true)
   }
 
   async disableAccount(e) {
-    return await this.toggleAccount(e, false)
+    return this.toggleAccount(e, false)
   }
 
   async toggleAccount(e, enabled) {
     try {
       const match = e.msg.match(/^#QQBot(启用|禁用)\s*(\S+)$/)
       if (!match) return false
-      
+
       const appId = match[2]
       const config = getConfigInstance()
       if (!config) {
         await e.reply('QQBot配置实例未找到')
         return false
       }
-      
+
       const accounts = await config.listAccounts()
       if (accounts.length === 0) {
         await e.reply('暂无QQBot账号配置')
@@ -196,30 +195,31 @@ export class QQBotAdapter extends plugin {
         await e.reply(`未找到QQBot账号 ${appId}`)
         return true
       }
-      
+
       account.enabled = enabled
       await config.addAccount(account)
-      
+
       const tasker = getTasker()
       if (tasker) {
+        const botId = botIdOf(account)
         if (enabled) {
           const success = await tasker.connect(account)
-          if (success) {
-            await e.reply(`QQBot账号 ${appId} 已启用并连接成功`)
-          } else {
-            await e.reply(`QQBot账号 ${appId} 已启用，但连接失败`)
-          }
+          await e.reply(
+            success
+              ? `QQBot账号 ${appId} 已启用并连接成功`
+              : `QQBot账号 ${appId} 已启用，但连接失败`,
+          )
         } else {
-          await tasker.disconnect(account.appId)
+          await tasker.disconnect(botId)
           await e.reply(`QQBot账号 ${appId} 已禁用并断开连接`)
         }
       } else {
         await e.reply(`QQBot账号 ${appId} 已${enabled ? '启用' : '禁用'}`)
       }
-      
+
       return true
     } catch (err) {
-      await e.reply(`操作失败: ${err.message}`)
+      await e.reply(`操作失败: ${normalizeError(err).message}`)
       return false
     }
   }

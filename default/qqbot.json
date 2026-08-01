@@ -1,0 +1,19 @@
+{
+  "tips": "QQBot 官方机器人配置",
+  "adminPassword": "",
+  "accounts": [],
+  "bot": {
+    "sandbox": false,
+    "maxRetry": 10,
+    "timeout": 30000
+  },
+  "toQRCode": true,
+  "toCallback": true,
+  "toBotUpload": true,
+  "hideGuildRecall": false,
+  "imageLength": 3,
+  "defaultMarkdownSupport": false,
+  "markdown": {
+    "template": ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"]
+  }
+}

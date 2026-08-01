@@ -1,9 +1,12 @@
 {
   "name": "qqbot-core",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "QQBot Core for XRK-AGT - QQ官方机器人适配器",
   "main": "index.js",
   "type": "module",
+  "engines": {
+    "node": ">=26.0.0"
+  },
   "keywords": [
     "qqbot",
     "xrk-agt",
@@ -13,11 +16,12 @@
   "author": "3106961196",
   "license": "MIT",
   "dependencies": {
+    "image-size": "^2.0.0",
     "qq-group-bot": "1.1.0",
     "qrcode": "^1.5.4",
-    "image-size": "^2.0.0",
-    "url-regex-safe": "^4.0.0",
-    "silk-wasm": "^3.7.1"
+    "silk-wasm": "^3.7.1",
+    "tweetnacl": "^1.0.3",
+    "ulid": "^3.0.2"
   },
   "peerDependencies": {
     "sharp": ">=0.32.0"

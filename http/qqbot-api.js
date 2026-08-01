@@ -1,8 +1,9 @@
-import BotUtil from '../../../src/utils/botutil.js';
+import RuntimeUtil from '../../../src/utils/runtime-util.js';
+import runtimeConfig from '../../../src/infrastructure/config/config.js';
 import { HttpResponse } from '../../../src/utils/http-utils.js';
 import ConfigLoader from '../../../src/infrastructure/commonconfig/loader.js';
 import { Bot as QQBotSDK } from 'qq-group-bot';
-import crypto from 'crypto';
+import crypto from 'node:crypto';
 
 const CONNECT_TEST_TIMEOUT = 15000
 const SESSION_COOKIE_NAME = 'qqbot_session'
@@ -41,7 +42,7 @@ const parseCookies = (req) => {
 }
 
 const createSession = (ip) => {
-  const sessionId = crypto.randomBytes(32).toString('hex')
+  const sessionId = crypto.randomBytes(32).toHex()
   sessions.set(sessionId, {
     ip,
     createdAt: Date.now(),
@@ -59,14 +60,14 @@ const validateSession = (sessionId, ip) => {
     return false
   }
   if (session.ip && session.ip !== ip) {
-    BotUtil.makeLog('warn', `🔴 [Session IP不匹配] 创建IP: ${session.ip} 请求IP: ${ip}`, 'QQBot')
+    RuntimeUtil.makeLog('warn', `🔴 [Session IP不匹配] 创建IP: ${session.ip} 请求IP: ${ip}`, 'QQBot')
     return false
   }
   return true
 }
 
 const createTempKey = () => {
-  const key = crypto.randomBytes(16).toString('hex')
+  const key = crypto.randomBytes(16).toHex()
   tempKeys.set(key, {
     createdAt: Date.now(),
     expiresAt: Date.now() + TEMP_KEY_EXPIRE_MS
@@ -113,33 +114,30 @@ const ensureAuthorized = (req, res) => {
     return true
   }
 
-  BotUtil.makeLog('warn', `🔴 [密钥验证失败] IP: ${ip}`, 'QQBot')
+  RuntimeUtil.makeLog('warn', `🔴 [密钥验证失败] IP: ${ip}`, 'QQBot')
   HttpResponse.forbidden(res, 'Unauthorized')
   return false
 };
 
-const logWebAccess = (req, Bot, action = '访问') => {
+const logWebAccess = (req, action = '访问') => {
   const ip = req.ip || req.connection?.remoteAddress || 'unknown'
-  BotUtil.makeLog('debug', `🟢 [Web操作] QQBot管理后台 - IP: ${ip} - ${action}`, 'QQBot')
+  RuntimeUtil.makeLog('debug', `🟢 [Web操作] QQBot管理后台 - IP: ${ip} - ${action}`, 'QQBot')
 };
 
 const getConfigInstance = () => ConfigLoader.get('qqbot');
 
-const getTasker = (Bot) => {
-  return Bot.tasker.find(t => t.id === 'QQBot');
+const getTasker = (runtime) => runtime.tasker.find(t => t.id === 'QQBot');
+
+const readMasterList = () => {
+  const list = runtimeConfig.chatbot?.master?.qq || []
+  return (Array.isArray(list) ? list : [list]).map(String).filter(Boolean)
 };
 
-const saveMastersToConfig = async () => {
-  try {
-    const cfg = (await import('../../../src/infrastructure/config/config.js')).default
-    const chatbotConfig = cfg.chatbot || {}
-    chatbotConfig.master = chatbotConfig.master || {}
-    chatbotConfig.master.qq = BotUtil.master.slice()
-    cfg.setConfig('chatbot', chatbotConfig)
-    BotUtil.makeLog('debug', `QQBot 主人列表已保存到配置: ${BotUtil.master.length} 个`, 'QQBot')
-  } catch (err) {
-    BotUtil.makeLog('error', `保存主人列表失败: ${err.message}`, 'QQBot', err)
-  }
+const saveMasterList = (list) => {
+  const chatbotConfig = { ...(runtimeConfig.chatbot || {}) }
+  chatbotConfig.master = { ...(chatbotConfig.master || {}), qq: list }
+  runtimeConfig.setConfig('chatbot', chatbotConfig)
+  RuntimeUtil.makeLog('debug', `QQBot 主人列表已保存: ${list.length} 个`, 'QQBot')
 };
 
 export default {
@@ -157,19 +155,19 @@ export default {
         
         const rateLimit = checkTempKeyRateLimit(ip)
         if (!rateLimit.allowed) {
-          BotUtil.makeLog('warn', `🔴 [临时Key频率限制] IP: ${ip}，${rateLimit.retryAfter}秒后重试`, 'QQBot')
+          RuntimeUtil.makeLog('warn', `🔴 [临时Key频率限制] IP: ${ip}，${rateLimit.retryAfter}秒后重试`, 'QQBot')
           res.setHeader('Retry-After', rateLimit.retryAfter)
           return HttpResponse.error(res, null, 429, `请求过于频繁，请${rateLimit.retryAfter}秒后重试`)
         }
         
         try {
           const tempKey = createTempKey()
-          BotUtil.makeLog('mark', `🔑 [临时登录Key] ${tempKey} (有效期5分钟) IP: ${ip}`, 'QQBot')
+          RuntimeUtil.makeLog('mark', `🔑 [临时登录Key] ${tempKey} (有效期5分钟) IP: ${ip}`, 'QQBot')
           HttpResponse.success(res, { 
             message: '临时Key已生成，请查看后台日志'
           })
         } catch (err) {
-          BotUtil.makeLog('error', `生成临时Key异常: ${err.message}`, 'QQBot', err)
+          RuntimeUtil.makeLog('error', `生成临时Key异常: ${err.message}`, 'QQBot', err)
           HttpResponse.error(res, err, 500, 'auth.temp-key')
         }
       }, 'qqbot.auth.temp-key')
@@ -184,11 +182,11 @@ export default {
         const ip = req.ip || req.connection?.remoteAddress || 'unknown'
         
         if (!tempKey) {
-          return HttpResponse.badRequest(res, '临时Key不能为空')
+          return HttpResponse.validationError(res, '临时Key不能为空')
         }
         
         if (!validateTempKey(tempKey)) {
-          BotUtil.makeLog('warn', `[临时Key登录失败] Key无效或已过期 IP: ${ip}`, 'QQBot')
+          RuntimeUtil.makeLog('warn', `[临时Key登录失败] Key无效或已过期 IP: ${ip}`, 'QQBot')
           return HttpResponse.forbidden(res, '临时Key无效或已过期')
         }
         
@@ -206,7 +204,7 @@ export default {
         
         res.setHeader('Set-Cookie', cookieValue)
         
-        BotUtil.makeLog('info', `🟢 [临时Key登录成功] IP: ${ip}`, 'QQBot')
+        RuntimeUtil.makeLog('info', `🟢 [临时Key登录成功] IP: ${ip}`, 'QQBot')
         HttpResponse.success(res, { message: '登录成功' })
       }, 'qqbot.auth.temp-login')
     },
@@ -220,14 +218,14 @@ export default {
         const ip = req.ip || req.connection?.remoteAddress || 'unknown'
         
         if (!password) {
-          return HttpResponse.badRequest(res, '密码不能为空')
+          return HttpResponse.validationError(res, '密码不能为空')
         }
         
         const qqbotConfig = await ConfigLoader.get('qqbot')?.read() || {}
         const adminPassword = qqbotConfig.adminPassword
         
         if (!adminPassword) {
-          BotUtil.makeLog('error', 'QQBot 管理密码未配置，请在 QQBot.json 中设置 adminPassword', 'QQBot')
+          RuntimeUtil.makeLog('error', 'QQBot 管理密码未配置，请在 QQBot.json 中设置 adminPassword', 'QQBot')
           return HttpResponse.error(res, null, 500, '管理密码未配置')
         }
         
@@ -244,7 +242,7 @@ export default {
           
           const valid = crypto.timingSafeEqual(paddedInput, paddedStored)
           if (!valid) {
-            BotUtil.makeLog('warn', `[登录失败] 密码错误 IP: ${ip}`, 'QQBot')
+            RuntimeUtil.makeLog('warn', `[登录失败] 密码错误 IP: ${ip}`, 'QQBot')
             return HttpResponse.forbidden(res, '密码错误')
           }
           
@@ -262,10 +260,10 @@ export default {
           
           res.setHeader('Set-Cookie', cookieValue)
           
-          BotUtil.makeLog('info', `🟢 [登录成功] IP: ${ip}`, 'QQBot')
+          RuntimeUtil.makeLog('info', `🟢 [登录成功] IP: ${ip}`, 'QQBot')
           HttpResponse.success(res, { message: '登录成功' })
         } catch (err) {
-          BotUtil.makeLog('error', `登录异常: ${err.message}`, 'QQBot', err)
+          RuntimeUtil.makeLog('error', `登录异常: ${err.message}`, 'QQBot', err)
           HttpResponse.error(res, err, 500, 'auth.login')
         }
       }, 'qqbot.auth.login')
@@ -285,7 +283,7 @@ export default {
         }
         
         res.setHeader('Set-Cookie', `${SESSION_COOKIE_NAME}=; Path=/; Max-Age=0; HttpOnly`)
-        BotUtil.makeLog('info', `🔴 [登出成功] IP: ${ip}`, 'QQBot')
+        RuntimeUtil.makeLog('info', `🔴 [登出成功] IP: ${ip}`, 'QQBot')
         HttpResponse.success(res, { message: '登出成功' })
       }, 'qqbot.auth.logout')
     },
@@ -310,7 +308,7 @@ export default {
       systemAuth: false,
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
         if (!ensureAuthorized(req, res)) return;
-        logWebAccess(req, Bot, '获取状态')
+        logWebAccess(req, '获取状态')
 
         const tasker = getTasker(Bot);
         const config = getConfigInstance();
@@ -353,7 +351,7 @@ export default {
       systemAuth: false,
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
         if (!ensureAuthorized(req, res)) return;
-        logWebAccess(req, Bot, '获取配置')
+        logWebAccess(req, '获取配置')
 
         const config = getConfigInstance();
         if (!config) {
@@ -386,7 +384,7 @@ export default {
       systemAuth: false,
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
         if (!ensureAuthorized(req, res)) return;
-        logWebAccess(req, Bot, '更新配置')
+        logWebAccess(req, '更新配置')
 
         const config = getConfigInstance();
         if (!config) {
@@ -411,6 +409,8 @@ export default {
         }
 
         await config.write(data);
+        const tasker = getTasker(Bot);
+        if (tasker?.loadConfig) await tasker.loadConfig();
         HttpResponse.success(res, null, '配置已保存');
       }, 'qqbot.config.update')
     },
@@ -487,7 +487,7 @@ export default {
 
           HttpResponse.success(res, { success: true }, '连接测试成功');
         } catch (err) {
-          BotUtil.makeLog('error', `QQBot连接测试失败: ${err.message}`, 'QQBotAPI', err);
+          RuntimeUtil.makeLog('error', `QQBot连接测试失败: ${err.message}`, 'QQBotAPI', err);
           HttpResponse.error(res, err, 400, 'qqbot.test-connect');
         }
       }, 'qqbot.test-connect')
@@ -532,7 +532,7 @@ export default {
       systemAuth: false,
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
         if (!ensureAuthorized(req, res)) return;
-        logWebAccess(req, Bot, `删除账号 ${req.params.appId}`)
+        logWebAccess(req, `删除账号 ${req.params.appId}`)
 
         const config = getConfigInstance();
         if (!config) {
@@ -628,7 +628,7 @@ export default {
             HttpResponse.error(res, new Error('重连失败'), 400, 'qqbot.reconnect');
           }
         } catch (err) {
-          BotUtil.makeLog('error', `QQBot重连失败: ${err.message}`, 'QQBotAPI', err);
+          RuntimeUtil.makeLog('error', `QQBot重连失败: ${err.message}`, 'QQBotAPI', err);
           HttpResponse.error(res, err, 400, 'qqbot.reconnect');
         }
       }, 'qqbot.reconnect')
@@ -650,7 +650,7 @@ export default {
           await tasker.loadConfig();
           HttpResponse.success(res, null, '配置已重新加载');
         } catch (err) {
-          BotUtil.makeLog('error', `QQBot配置重载失败: ${err.message}`, 'QQBotAPI', err);
+          RuntimeUtil.makeLog('error', `QQBot配置重载失败: ${err.message}`, 'QQBotAPI', err);
           HttpResponse.error(res, err, 500, 'qqbot.reload');
         }
       }, 'qqbot.reload')
@@ -662,13 +662,13 @@ export default {
       systemAuth: false,
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
         if (!ensureAuthorized(req, res)) return;
-        logWebAccess(req, Bot, `添加主人 ${req.params.botId}`)
+        logWebAccess(req, `添加主人 ${req.params.botId}`)
 
         const { botId } = req.params
         const { user_id } = req.body || {}
 
         if (!user_id) {
-          return HttpResponse.badRequest(res, 'user_id 不能为空')
+          return HttpResponse.validationError(res, 'user_id 不能为空')
         }
 
         const bot = Bot[botId]
@@ -677,17 +677,18 @@ export default {
         }
 
         try {
-          const masterKey = `${botId}:${user_id}`
-          if (!Bot.master.includes(masterKey)) {
-            Bot.master.push(masterKey)
-            await saveMastersToConfig()
-            BotUtil.makeLog('info', `🟢 [添加主人] QQBot (${bot.nickname || botId}) - 用户: ${user_id}`, 'QQBot')
-            HttpResponse.success(res, { user_id }, '添加主人成功')
+          const masterKey = String(user_id).includes(':') ? String(user_id) : `${botId}:${user_id}`
+          const masters = readMasterList()
+          if (!masters.includes(masterKey)) {
+            masters.push(masterKey)
+            saveMasterList(masters)
+            RuntimeUtil.makeLog('info', `🟢 [添加主人] QQBot (${bot.nickname || botId}) - 用户: ${masterKey}`, 'QQBot')
+            HttpResponse.success(res, { user_id: masterKey }, '添加主人成功')
           } else {
-            HttpResponse.success(res, { user_id }, '该用户已是主人')
+            HttpResponse.success(res, { user_id: masterKey }, '该用户已是主人')
           }
         } catch (err) {
-          BotUtil.makeLog('error', `添加主人失败: ${err.message}`, 'QQBotAPI', err)
+          RuntimeUtil.makeLog('error', `添加主人失败: ${err.message}`, 'QQBotAPI', err)
           HttpResponse.error(res, err, 500, 'qqbot.master.add')
         }
       }, 'qqbot.master.add')
@@ -701,10 +702,11 @@ export default {
         if (!ensureAuthorized(req, res)) return;
 
         const { botId } = req.params
-        const cfg = (await import('../../../src/infrastructure/config/config.js')).default
-        const masterList = cfg.master?.[botId] || []
+        const masterList = runtimeConfig.master?.[botId] || readMasterList()
+        const prefix = `${botId}:`
         const masters = masterList.map(m => {
           const str = String(m)
+          if (str.startsWith(prefix)) return str.slice(prefix.length)
           return str.includes(':') ? str.substring(str.indexOf(':') + 1) : str
         })
 
@@ -718,16 +720,17 @@ export default {
       systemAuth: false,
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
         if (!ensureAuthorized(req, res)) return;
-        logWebAccess(req, Bot, `移除主人 ${req.params.botId}/${req.params.master}`)
+        logWebAccess(req, `移除主人 ${req.params.botId}/${req.params.master}`)
 
         const { botId, master } = req.params
         const masterKey = `${botId}:${master}`
-        const index = Bot.master.indexOf(masterKey)
+        const masters = readMasterList()
+        const index = masters.indexOf(masterKey)
 
         if (index > -1) {
-          Bot.master.splice(index, 1)
-          await saveMastersToConfig()
-          BotUtil.makeLog('info', `🔴 [移除主人] QQBot (${botId}) - 用户: ${master}`, 'QQBot')
+          masters.splice(index, 1)
+          saveMasterList(masters)
+          RuntimeUtil.makeLog('info', `🔴 [移除主人] QQBot (${botId}) - 用户: ${master}`, 'QQBot')
           HttpResponse.success(res, null, '移除成功')
         } else {
           HttpResponse.notFound(res, '该主人不存在')
@@ -778,7 +781,7 @@ export default {
       systemAuth: false,
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
         if (!ensureAuthorized(req, res)) return;
-        logWebAccess(req, Bot, `更新账户配置 ${req.params.appId}`)
+        logWebAccess(req, `更新账户配置 ${req.params.appId}`)
 
         const { appId } = req.params
         const config = getConfigInstance()
@@ -830,6 +833,8 @@ export default {
         }
 
         await config.write(data)
+        const tasker = getTasker(Bot)
+        if (tasker?.loadConfig) await tasker.loadConfig()
         HttpResponse.success(res, null, '配置已保存')
       }, 'qqbot.account.config.update')
     },
