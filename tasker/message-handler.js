@@ -1,8 +1,4 @@
 export class MessageHandler {
-  static MAX_FRIENDS = 5000
-  static MAX_GROUPS = 5000
-  static MAX_GROUP_MEMBERS = 5000
-
   constructor(tasker) {
     this._tasker = tasker
     this.messageBuilder = null
@@ -23,13 +19,12 @@ export class MessageHandler {
     const sendMsg = async () => {
       for (const i of msgs) {
         try {
-          AgentRuntime.makeLog('debug', `发送消息: ${this.messageBuilder.makeLog(i)}`, data.self_id)
+          AgentRuntime.makeLog('debug', `发送: ${this.messageBuilder.makeLog(i)}`, data.self_id)
           const ret = await send(i)
-          AgentRuntime.makeLog('debug', `发送消息返回: ${AgentRuntime.String(ret)}`, data.self_id)
           rets.data.push(ret)
           if (ret.id) rets.message_id.push(ret.id)
         } catch (err) {
-          AgentRuntime.makeLog('error', `发送消息错误: ${err.message}`, data.self_id, err)
+          AgentRuntime.makeLog('error', `发送失败: ${err.message}`, data.self_id, err)
           rets.error.push(err)
           return false
         }
@@ -250,12 +245,8 @@ export class MessageHandler {
   async makeFriendMessage(data, event) {
     data.sender = { user_id: `${data.self_id}${this.sep}${event.sender.user_id}` }
     AgentRuntime.makeLog('info', `好友消息：[${data.user_id}] ${data.raw_message}`, data.self_id)
-    AgentRuntime.makeLog('debug', `makeFriendMessage: event.sender=${AgentRuntime.String(event.sender)}`, data.self_id)
-    data.reply = msg => {
-      AgentRuntime.makeLog('info', `reply called: user_id=${event.sender.user_id}`, data.self_id)
-      return this.sendFriendMsg({ ...data, user_id: event.sender.user_id }, msg, { id: data.message_id })
-    }
-    await this.setFriendMap(data)
+    data.reply = msg => this.sendFriendMsg({ ...data, user_id: event.sender.user_id }, msg, { id: data.message_id })
+    this.setFriendMap(data)
   }
 
   async makeGroupMessage(data, event) {
@@ -263,8 +254,8 @@ export class MessageHandler {
     data.group_id = `${data.self_id}${this.sep}${event.group_id}`
     AgentRuntime.makeLog('info', `群消息：[${data.group_id}, ${data.user_id}] ${data.raw_message}`, data.self_id)
     data.reply = msg => this.sendGroupMsg({ ...data, group_id: event.group_id }, msg, { id: data.message_id })
-    data.message.unshift({ type: "at", qq: data.self_id })
-    await this.setGroupMap(data)
+    data.message.unshift({ type: 'at', qq: data.self_id })
+    this.setGroupMap(data)
   }
 
   async makeDirectMessage(data, event) {
@@ -285,7 +276,7 @@ export class MessageHandler {
       guild_id: event.guild_id,
       channel_id: event.channel_id,
     }, msg, { id: data.message_id })
-    await this.setFriendMap(data)
+    this.setFriendMap(data)
   }
 
   async makeGuildMessage(data, event) {
@@ -307,24 +298,24 @@ export class MessageHandler {
       guild_id: event.guild_id,
       channel_id: event.channel_id,
     }, msg, { id: data.message_id })
-    await this.setFriendMap(data)
-    await this.setGroupMap(data)
+    this.setFriendMap(data)
+    this.setGroupMap(data)
   }
 
-  async setFriendMap(data) {
+  setFriendMap(data) {
     if (!data.user_id) return
-    await data.bot.fl.set(data.user_id, { ...data.bot.fl.get(data.user_id), ...data.sender })
+    data.bot.fl.set(data.user_id, { ...data.bot.fl.get(data.user_id), ...data.sender })
   }
 
-  async setGroupMap(data) {
+  setGroupMap(data) {
     if (!data.group_id) return
-    await data.bot.gl.set(data.group_id, { ...data.bot.gl.get(data.group_id), group_id: data.group_id })
+    data.bot.gl.set(data.group_id, { ...data.bot.gl.get(data.group_id), group_id: data.group_id })
     let gml = data.bot.gml.get(data.group_id)
     if (!gml) {
       gml = new Map()
-      await data.bot.gml.set(data.group_id, gml)
+      data.bot.gml.set(data.group_id, gml)
     }
-    await gml.set(data.user_id, { ...gml.get(data.user_id), ...data.sender })
+    gml.set(data.user_id, { ...gml.get(data.user_id), ...data.sender })
   }
 
   async makeMessage(id, event) {

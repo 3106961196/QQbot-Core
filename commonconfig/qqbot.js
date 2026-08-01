@@ -70,6 +70,13 @@ export default class QQBotConfig extends ConfigBase {
                 description: '是否启用Markdown消息格式',
                 default: false,
                 component: 'Switch'
+              },
+              autoConnect: {
+                type: 'boolean',
+                label: '自动连接',
+                description: '启动时是否自动连接此账户',
+                default: true,
+                component: 'Switch'
               }
             }
           },
@@ -90,7 +97,7 @@ export default class QQBotConfig extends ConfigBase {
                 label: '最大重试次数',
                 description: '连接失败时的最大重试次数',
                 min: 0,
-                default: 5,
+                default: 10,
                 component: 'InputNumber'
               },
               timeout: {

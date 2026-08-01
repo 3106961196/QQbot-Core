@@ -41,6 +41,18 @@ const parseCookies = (req) => {
   return cookies
 }
 
+const setSessionCookie = (req, res, sessionId) => {
+  const isSecure = req.protocol === 'https' || req.secure
+  res.setHeader('Set-Cookie', [
+    `${SESSION_COOKIE_NAME}=${sessionId}`,
+    'Path=/',
+    `Max-Age=${SESSION_EXPIRE_MS / 1000}`,
+    'HttpOnly',
+    'SameSite=Strict',
+    isSecure ? 'Secure' : '',
+  ].filter(Boolean).join('; '))
+}
+
 const createSession = (ip) => {
   const sessionId = crypto.randomBytes(32).toHex()
   sessions.set(sessionId, {
@@ -60,7 +72,7 @@ const validateSession = (sessionId, ip) => {
     return false
   }
   if (session.ip && session.ip !== ip) {
-    RuntimeUtil.makeLog('warn', `🔴 [Session IP不匹配] 创建IP: ${session.ip} 请求IP: ${ip}`, 'QQBot')
+    RuntimeUtil.makeLog('warn', `session IP mismatch`, 'QQBot')
     return false
   }
   return true
@@ -114,14 +126,9 @@ const ensureAuthorized = (req, res) => {
     return true
   }
 
-  RuntimeUtil.makeLog('warn', `🔴 [密钥验证失败] IP: ${ip}`, 'QQBot')
+  RuntimeUtil.makeLog('warn', `unauthorized IP: ${ip}`, 'QQBot')
   HttpResponse.forbidden(res, 'Unauthorized')
   return false
-};
-
-const logWebAccess = (req, action = '访问') => {
-  const ip = req.ip || req.connection?.remoteAddress || 'unknown'
-  RuntimeUtil.makeLog('debug', `🟢 [Web操作] QQBot管理后台 - IP: ${ip} - ${action}`, 'QQBot')
 };
 
 const getConfigInstance = () => ConfigLoader.get('qqbot');
@@ -155,14 +162,14 @@ export default {
         
         const rateLimit = checkTempKeyRateLimit(ip)
         if (!rateLimit.allowed) {
-          RuntimeUtil.makeLog('warn', `🔴 [临时Key频率限制] IP: ${ip}，${rateLimit.retryAfter}秒后重试`, 'QQBot')
+          RuntimeUtil.makeLog('warn', `temp-key rate limit IP: ${ip}`, 'QQBot')
           res.setHeader('Retry-After', rateLimit.retryAfter)
           return HttpResponse.error(res, null, 429, `请求过于频繁，请${rateLimit.retryAfter}秒后重试`)
         }
         
         try {
           const tempKey = createTempKey()
-          RuntimeUtil.makeLog('mark', `🔑 [临时登录Key] ${tempKey} (有效期5分钟) IP: ${ip}`, 'QQBot')
+          RuntimeUtil.makeLog('mark', `QQBot temp-key: ${tempKey} (5min) IP: ${ip}`, 'QQBot')
           HttpResponse.success(res, { 
             message: '临时Key已生成，请查看后台日志'
           })
@@ -191,20 +198,9 @@ export default {
         }
         
         const sessionId = createSession(ip)
-        const isSecure = req.protocol === 'https' || req.secure
+        setSessionCookie(req, res, sessionId)
         
-        const cookieValue = [
-          `${SESSION_COOKIE_NAME}=${sessionId}`,
-          'Path=/',
-          `Max-Age=${SESSION_EXPIRE_MS / 1000}`,
-          'HttpOnly',
-          'SameSite=Strict',
-          isSecure ? 'Secure' : ''
-        ].filter(Boolean).join('; ')
-        
-        res.setHeader('Set-Cookie', cookieValue)
-        
-        RuntimeUtil.makeLog('info', `🟢 [临时Key登录成功] IP: ${ip}`, 'QQBot')
+        RuntimeUtil.makeLog('info', `temp-key login OK IP: ${ip}`, 'QQBot')
         HttpResponse.success(res, { message: '登录成功' })
       }, 'qqbot.auth.temp-login')
     },
@@ -247,20 +243,9 @@ export default {
           }
           
           const sessionId = createSession(ip)
-          const isSecure = req.protocol === 'https' || req.secure
+        setSessionCookie(req, res, sessionId)
           
-          const cookieValue = [
-            `${SESSION_COOKIE_NAME}=${sessionId}`,
-            'Path=/',
-            `Max-Age=${SESSION_EXPIRE_MS / 1000}`,
-            'HttpOnly',
-            'SameSite=Strict',
-            isSecure ? 'Secure' : ''
-          ].filter(Boolean).join('; ')
-          
-          res.setHeader('Set-Cookie', cookieValue)
-          
-          RuntimeUtil.makeLog('info', `🟢 [登录成功] IP: ${ip}`, 'QQBot')
+          RuntimeUtil.makeLog('info', `login OK IP: ${ip}`, 'QQBot')
           HttpResponse.success(res, { message: '登录成功' })
         } catch (err) {
           RuntimeUtil.makeLog('error', `登录异常: ${err.message}`, 'QQBot', err)
@@ -283,7 +268,7 @@ export default {
         }
         
         res.setHeader('Set-Cookie', `${SESSION_COOKIE_NAME}=; Path=/; Max-Age=0; HttpOnly`)
-        RuntimeUtil.makeLog('info', `🔴 [登出成功] IP: ${ip}`, 'QQBot')
+        RuntimeUtil.makeLog('info', `logout IP: ${ip}`, 'QQBot')
         HttpResponse.success(res, { message: '登出成功' })
       }, 'qqbot.auth.logout')
     },
@@ -308,7 +293,6 @@ export default {
       systemAuth: false,
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
         if (!ensureAuthorized(req, res)) return;
-        logWebAccess(req, '获取状态')
 
         const tasker = getTasker(Bot);
         const config = getConfigInstance();
@@ -351,7 +335,6 @@ export default {
       systemAuth: false,
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
         if (!ensureAuthorized(req, res)) return;
-        logWebAccess(req, '获取配置')
 
         const config = getConfigInstance();
         if (!config) {
@@ -384,7 +367,6 @@ export default {
       systemAuth: false,
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
         if (!ensureAuthorized(req, res)) return;
-        logWebAccess(req, '更新配置')
 
         const config = getConfigInstance();
         if (!config) {
@@ -433,6 +415,8 @@ export default {
         }
 
         await config.write(data);
+        const tasker = getTasker(Bot);
+        if (tasker?.loadConfig) await tasker.loadConfig();
         HttpResponse.success(res, null, '配置已保存');
       }, 'qqbot.config.write')
     },
@@ -532,7 +516,6 @@ export default {
       systemAuth: false,
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
         if (!ensureAuthorized(req, res)) return;
-        logWebAccess(req, `删除账号 ${req.params.appId}`)
 
         const config = getConfigInstance();
         if (!config) {
@@ -662,7 +645,6 @@ export default {
       systemAuth: false,
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
         if (!ensureAuthorized(req, res)) return;
-        logWebAccess(req, `添加主人 ${req.params.botId}`)
 
         const { botId } = req.params
         const { user_id } = req.body || {}
@@ -682,7 +664,7 @@ export default {
           if (!masters.includes(masterKey)) {
             masters.push(masterKey)
             saveMasterList(masters)
-            RuntimeUtil.makeLog('info', `🟢 [添加主人] QQBot (${bot.nickname || botId}) - 用户: ${masterKey}`, 'QQBot')
+            RuntimeUtil.makeLog('info', `add master ${masterKey}`, 'QQBot')
             HttpResponse.success(res, { user_id: masterKey }, '添加主人成功')
           } else {
             HttpResponse.success(res, { user_id: masterKey }, '该用户已是主人')
@@ -702,13 +684,13 @@ export default {
         if (!ensureAuthorized(req, res)) return;
 
         const { botId } = req.params
-        const masterList = runtimeConfig.master?.[botId] || readMasterList()
         const prefix = `${botId}:`
-        const masters = masterList.map(m => {
-          const str = String(m)
-          if (str.startsWith(prefix)) return str.slice(prefix.length)
-          return str.includes(':') ? str.substring(str.indexOf(':') + 1) : str
-        })
+        const masters = readMasterList()
+          .filter(m => String(m).startsWith(prefix) || !String(m).includes(':'))
+          .map(m => {
+            const str = String(m)
+            return str.startsWith(prefix) ? str.slice(prefix.length) : str
+          })
 
         HttpResponse.success(res, { masters })
       }, 'qqbot.master.list')
@@ -720,7 +702,6 @@ export default {
       systemAuth: false,
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
         if (!ensureAuthorized(req, res)) return;
-        logWebAccess(req, `移除主人 ${req.params.botId}/${req.params.master}`)
 
         const { botId, master } = req.params
         const masterKey = `${botId}:${master}`
@@ -730,7 +711,7 @@ export default {
         if (index > -1) {
           masters.splice(index, 1)
           saveMasterList(masters)
-          RuntimeUtil.makeLog('info', `🔴 [移除主人] QQBot (${botId}) - 用户: ${master}`, 'QQBot')
+          RuntimeUtil.makeLog('info', `remove master ${botId}:${master}`, 'QQBot')
           HttpResponse.success(res, null, '移除成功')
         } else {
           HttpResponse.notFound(res, '该主人不存在')
@@ -781,7 +762,6 @@ export default {
       systemAuth: false,
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
         if (!ensureAuthorized(req, res)) return;
-        logWebAccess(req, `更新账户配置 ${req.params.appId}`)
 
         const { appId } = req.params
         const config = getConfigInstance()

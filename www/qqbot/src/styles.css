@@ -1,0 +1,108 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  background: #f0f4f9;
+  color: #1f1f1f;
+  -webkit-font-smoothing: antialiased;
+}
+
+.app-page {
+  min-height: 100vh;
+  background:
+    linear-gradient(180deg, #e8f1fc 0%, transparent 220px),
+    #f0f4f9;
+}
+
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  height: 56px;
+  padding: 0 24px;
+  background: rgba(255, 255, 255, 0.92);
+  border-bottom: 1px solid #d9e2ef;
+  backdrop-filter: blur(8px);
+}
+
+.app-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.app-brand-mark {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: linear-gradient(145deg, #3b8bff, #1677ff);
+  box-shadow: 0 2px 6px rgba(22, 119, 255, 0.28);
+}
+
+.app-brand-title {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: #1f1f1f;
+}
+
+.app-brand-sub {
+  font-size: 12px;
+  color: #8c8c8c;
+  margin-top: 1px;
+}
+
+.app-main {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 24px 20px 48px;
+}
+
+.login-wrap {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(22, 119, 255, 0.12), transparent),
+    #f0f4f9;
+}
+
+.login-card .ant-card-body {
+  padding: 28px 28px 24px;
+}
+
+.switch-grid {
+  display: grid;
+  gap: 4px 0;
+}
+
+.switch-grid .ant-form-item {
+  margin-bottom: 8px;
+}
+
+@media (max-width: 640px) {
+  .app-header {
+    padding: 0 12px;
+    height: auto;
+    min-height: 56px;
+    flex-wrap: wrap;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+
+  .app-main {
+    padding: 16px 12px 40px;
+  }
+}

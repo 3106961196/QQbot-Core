@@ -1,0 +1,16 @@
+{
+  "id": "qqbot",
+  "name": "QQBot 管理",
+  "enabled": false,
+  "serve": "static",
+  "staticRoot": "dist",
+  "buildOnStart": false,
+  "build": { "command": "pnpm", "args": ["build"] },
+  "_note": "日常挂载 dist。首次或改前端后在 www/qqbot 执行 pnpm install && pnpm build。开发 HMR：enabled=true + serve=proxy。",
+  "command": "pnpm",
+  "args": ["dev"],
+  "port": 5188,
+  "proxy": { "mount": "/qqbot" },
+  "env": { "BROWSER": "none" },
+  "autoRestart": true
+}
