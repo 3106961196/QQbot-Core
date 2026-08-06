@@ -47,7 +47,7 @@ cd www/qqbot && pnpm install && pnpm build && cd ../..
    `{getServerUrl()}/qqbot/`  
    （调试直链：`/core/QQbot-Core/qqbot/`）
 
-3. 「点击获取」临时 Key → 看后台日志 → 登录 → 添加账号
+3. 「点击获取」临时 Key → 看后台日志 → 登录 → 添加账号（先「校验凭证」再「保存并连接」；校验只换 AccessToken，不占网关登录）
 
 运行时文件：仓库根目录 **`data/QQBot.json`**（首次启动会从 `default/qqbot.json` 自动创建；不要只改模板）。
 
@@ -60,7 +60,7 @@ cd www/qqbot && pnpm install && pnpm build && cd ../..
 - 浏览器兼容：内联 `unwrapSuccess` / `abortTimeout`（勿引用 `/xrk`）
 - 本地 HMR：将 `sign.json` 的 `enabled` 设为 `true` 且 `serve: "proxy"`，再 `pnpm dev`
 
-能力：临时 Key / 密码登录、账号列表与连接控制、全局配置、单账号设置与主人增删。API：`/api/qqbot/*`。
+能力：临时 Key / 密码登录、账号列表与连接控制、全局配置、单账号设置与主人增删。添加账号时「校验凭证」仅调用 `getAppAccessToken`，正式 WebSocket 登录只在保存时进行一次。API：`/api/qqbot/*`。
 
 ***
 

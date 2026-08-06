@@ -310,10 +310,10 @@ function AddBotModal({ open, onClose, onAdded }) {
       const clientSecret = values.clientSecret.trim()
       await api.testConnect({ appId, clientSecret })
       setVerifiedKey(`${appId}\0${clientSecret}`)
-      notify('连接测试成功，可以保存')
+      notify('凭证有效，保存时才会正式登录连接')
     } catch (err) {
       setVerifiedKey('')
-      notify(err.message || '连接失败，未保存', 'error')
+      notify(err.message || '凭证校验失败，未保存', 'error')
     } finally {
       setBusy(false)
     }
@@ -324,7 +324,7 @@ function AddBotModal({ open, onClose, onAdded }) {
     const appId = values.appId.trim()
     const clientSecret = values.clientSecret.trim()
     if (`${appId}\0${clientSecret}` !== verifiedKey) {
-      notify('请先测试连接成功再保存', 'error')
+      notify('请先校验凭证成功再保存', 'error')
       return
     }
     setBusy(true)
@@ -358,10 +358,10 @@ function AddBotModal({ open, onClose, onAdded }) {
         <Space>
           <Button onClick={onClose}>取消</Button>
           <Button loading={busy} onClick={test}>
-            测试连接
+            校验凭证
           </Button>
           <Button type="primary" loading={busy} disabled={!canSave} onClick={save}>
-            保存
+            保存并连接
           </Button>
         </Space>
       }
@@ -380,7 +380,8 @@ function AddBotModal({ open, onClose, onAdded }) {
           ]}
         />
         <Text type="secondary" style={{ fontSize: 12 }}>
-          昵称连接后自动获取。{canSave ? '已测通，可保存。' : '须先测试连接成功再保存。'}
+          校验只验 AppID/Secret，不占网关登录名额；正式连接在保存时进行一次。
+          {canSave ? ' 已校验，可保存。' : ' 须先校验凭证再保存。'}
         </Text>
       </Form>
     </Modal>

@@ -2,10 +2,11 @@ import RuntimeUtil from '../../../src/utils/runtime-util.js';
 import runtimeConfig from '../../../src/infrastructure/config/config.js';
 import { HttpResponse } from '../../../src/utils/http-utils.js';
 import ConfigLoader from '../../../src/infrastructure/commonconfig/loader.js';
-import { Bot as QQBotSDK } from 'qq-group-bot';
 import crypto from 'node:crypto';
 
-const CONNECT_TEST_TIMEOUT = 15000
+/** 仅换票校验凭证，不走 WebSocket Identify（避免测完再保存触发登录频繁） */
+const CRED_PROBE_TIMEOUT = 15000
+const APP_ACCESS_TOKEN_URL = 'https://bots.qq.com/app/getAppAccessToken'
 const SESSION_COOKIE_NAME = 'qqbot_session'
 const SESSION_EXPIRE_MS = 15 * 24 * 60 * 60 * 1000
 const sessions = new Map()
@@ -135,40 +136,34 @@ const getConfigInstance = () => ConfigLoader.get('qqbot');
 
 const getTasker = (runtime) => runtime.tasker.find(t => t.id === 'QQBot');
 
-/** 凭证探测：READY 才算通；失败不写配置 */
-const probeConnect = async (appId, clientSecret, botConfig = {}) => {
-  const testBot = new QQBotSDK({
-    ...botConfig,
-    appid: appId,
-    secret: clientSecret,
-    intents: ['GROUP_AT_MESSAGE_CREATE', 'C2C_MESSAGE_CREATE'],
+/**
+ * 凭证探测：只调 getAppAccessToken，不建 WS、不 Identify。
+ * 正式上线连接留给 Tasker.connect，保证「测 → 存」只登录一次。
+ */
+const probeConnect = async (appId, clientSecret) => {
+  const res = await fetch(APP_ACCESS_TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({
+      appId: String(appId),
+      clientSecret: String(clientSecret),
+    }),
+    signal: AbortSignal.timeout(CRED_PROBE_TIMEOUT),
   })
 
+  let data = null
   try {
-    await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error('连接超时'))
-      }, CONNECT_TEST_TIMEOUT)
-
-      testBot.sessionManager.once('READY', () => {
-        clearTimeout(timeout)
-        resolve()
-      })
-
-      testBot.sessionManager.once('DEAD', (data) => {
-        clearTimeout(timeout)
-        reject(new Error(data?.msg || '连接失败'))
-      })
-
-      testBot.start()
-    })
-  } finally {
-    try {
-      testBot.stop()
-    } catch {
-      /* ignore */
-    }
+    data = await res.json()
+  } catch {
+    throw new Error(`凭证接口响应异常 (HTTP ${res.status})`)
   }
+
+  if (!res.ok || !data?.access_token) {
+    const detail = data?.message || data?.msg || data?.error || data?.code || `HTTP ${res.status}`
+    throw new Error(`凭证无效: ${detail}`)
+  }
+
+  return { expiresIn: data.expires_in }
 }
 
 const readMasterList = () => {
@@ -477,14 +472,11 @@ export default {
           return HttpResponse.notFound(res, 'QQBot配置实例未找到');
         }
 
-        const configData = await config.read();
-        const botConfig = configData.bot || {};
-
         try {
-          await probeConnect(appId, clientSecret, botConfig);
-          HttpResponse.success(res, { ok: true }, '连接测试成功');
+          const probe = await probeConnect(appId, clientSecret);
+          HttpResponse.success(res, { ok: true, expiresIn: probe.expiresIn }, '凭证有效（未占用网关登录）');
         } catch (err) {
-          RuntimeUtil.makeLog('error', `QQBot连接测试失败: ${err.message}`, 'QQBotAPI', err);
+          RuntimeUtil.makeLog('error', `QQBot凭证校验失败: ${err.message}`, 'QQBotAPI', err);
           HttpResponse.error(res, err, 400, 'qqbot.test-connect');
         }
       }, 'qqbot.test-connect')
@@ -507,12 +499,11 @@ export default {
           return HttpResponse.validationError(res, '缺少appId或clientSecret');
         }
 
-        const configData = await config.read();
         try {
-          await probeConnect(appId, clientSecret, configData.bot || {});
+          await probeConnect(appId, clientSecret);
         } catch (err) {
-          RuntimeUtil.makeLog('warn', `拒绝保存未测通账号 ${appId}: ${err.message}`, 'QQBotAPI');
-          return HttpResponse.error(res, err, 400, '连接未成功，已拒绝写入配置');
+          RuntimeUtil.makeLog('warn', `拒绝保存凭证无效账号 ${appId}: ${err.message}`, 'QQBotAPI');
+          return HttpResponse.error(res, err, 400, '凭证无效，已拒绝写入配置');
         }
 
         const account = {
@@ -534,7 +525,7 @@ export default {
           }
           const ok = await tasker.connect(account);
           if (!ok) {
-            return HttpResponse.error(res, new Error('凭证已测通但正式连接失败'), 400, 'qqbot.accounts.add');
+            return HttpResponse.error(res, new Error('凭证有效但正式连接失败'), 400, 'qqbot.accounts.add');
           }
         }
 
