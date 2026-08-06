@@ -13,18 +13,16 @@ const sessions = new Map()
 const TEMP_KEY_EXPIRE_MS = 5 * 60 * 1000
 const tempKeys = new Map()
 
-// 临时Key频率限制：每个IP每分钟最多3次
-const TEMP_KEY_RATE_LIMIT = 3
-const TEMP_KEY_RATE_WINDOW = 60 * 1000
+/** 临时 Key：同一 IP 5 分钟内仅可获取 1 次 */
+const TEMP_KEY_COOLDOWN_MS = 5 * 60 * 1000
+/** ip → 上次成功发放时间戳 */
 const tempKeyRateLimit = new Map()
 
-// 每10分钟清理过期的频率限制记录
+// 定期清理过期限流记录
 setInterval(() => {
   const now = Date.now()
-  for (const [ip, record] of tempKeyRateLimit) {
-    if (now - record.windowStart > TEMP_KEY_RATE_WINDOW) {
-      tempKeyRateLimit.delete(ip)
-    }
+  for (const [ip, lastAt] of tempKeyRateLimit) {
+    if (now - lastAt > TEMP_KEY_COOLDOWN_MS) tempKeyRateLimit.delete(ip)
   }
 }, 10 * 60 * 1000)
 
@@ -102,20 +100,29 @@ const validateTempKey = (key) => {
 
 const checkTempKeyRateLimit = (ip) => {
   const now = Date.now()
-  const record = tempKeyRateLimit.get(ip)
+  const lastAt = tempKeyRateLimit.get(ip)
+  if (!lastAt) return { allowed: true, retryAfter: 0 }
 
-  if (!record || now - record.windowStart > TEMP_KEY_RATE_WINDOW) {
-    tempKeyRateLimit.set(ip, { windowStart: now, count: 1 })
-    return { allowed: true, remaining: TEMP_KEY_RATE_LIMIT - 1 }
+  const remainMs = TEMP_KEY_COOLDOWN_MS - (now - lastAt)
+  if (remainMs <= 0) {
+    tempKeyRateLimit.delete(ip)
+    return { allowed: true, retryAfter: 0 }
   }
 
-  if (record.count >= TEMP_KEY_RATE_LIMIT) {
-    const retryAfter = Math.ceil((TEMP_KEY_RATE_WINDOW - (now - record.windowStart)) / 1000)
-    return { allowed: false, retryAfter }
-  }
+  return { allowed: false, retryAfter: Math.ceil(remainMs / 1000) }
+}
 
-  record.count++
-  return { allowed: true, remaining: TEMP_KEY_RATE_LIMIT - record.count }
+const markTempKeyIssued = (ip) => {
+  tempKeyRateLimit.set(ip, Date.now())
+}
+
+const formatCooldownHint = (retryAfterSec) => {
+  const s = Math.max(1, Number(retryAfterSec) || 1)
+  const m = Math.floor(s / 60)
+  const r = s % 60
+  if (m <= 0) return `${r} 秒`
+  if (r === 0) return `${m} 分钟`
+  return `${m} 分 ${r} 秒`
 }
 
 const ensureAuthorized = (req, res) => {
@@ -190,20 +197,27 @@ export default {
       systemAuth: false,
       handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
         const ip = req.ip || req.connection?.remoteAddress || 'unknown'
-        
+
         const rateLimit = checkTempKeyRateLimit(ip)
         if (!rateLimit.allowed) {
-          RuntimeUtil.makeLog('warn', `temp-key rate limit IP: ${ip}`, 'QQBot')
-          res.setHeader('Retry-After', rateLimit.retryAfter)
-          return HttpResponse.error(res, null, 429, `请求过于频繁，请${rateLimit.retryAfter}秒后重试`)
+          RuntimeUtil.makeLog('warn', `temp-key cooldown IP: ${ip}, retryAfter=${rateLimit.retryAfter}s`, 'QQBot')
+          res.setHeader('Retry-After', String(rateLimit.retryAfter))
+          return res.status(429).json({
+            success: false,
+            message: `同一 IP 5 分钟内只能获取 1 次，请 ${formatCooldownHint(rateLimit.retryAfter)} 后再试`,
+            code: 'TEMP_KEY_RATE_LIMIT',
+            retryAfter: rateLimit.retryAfter,
+          })
         }
-        
+
         try {
           const tempKey = createTempKey()
+          markTempKeyIssued(ip)
           RuntimeUtil.makeLog('mark', `QQBot temp-key: ${tempKey} (5min) IP: ${ip}`, 'QQBot')
-          HttpResponse.success(res, { 
-            message: '临时Key已生成，请查看后台日志'
-          })
+          HttpResponse.success(res, {
+            cooldownSeconds: Math.floor(TEMP_KEY_COOLDOWN_MS / 1000),
+            keyTtlSeconds: Math.floor(TEMP_KEY_EXPIRE_MS / 1000),
+          }, '临时 Key 已写入主服日志，5 分钟内有效')
         } catch (err) {
           RuntimeUtil.makeLog('error', `生成临时Key异常: ${err.message}`, 'QQBot', err)
           HttpResponse.error(res, err, 500, 'auth.temp-key')

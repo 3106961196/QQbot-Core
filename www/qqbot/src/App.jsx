@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  Alert,
   App as AntApp,
   Avatar,
   Button,
@@ -10,6 +11,7 @@ import {
   Input,
   InputNumber,
   Modal,
+  Segmented,
   Space,
   Spin,
   Switch,
@@ -21,6 +23,8 @@ import {
 import {
   ApiOutlined,
   DisconnectOutlined,
+  KeyOutlined,
+  LockOutlined,
   LogoutOutlined,
   PlusOutlined,
   ReloadOutlined,
@@ -30,7 +34,9 @@ import {
 import { api } from './api.js'
 import { deepClone } from './compat.js'
 
-const { Text } = Typography
+const { Text, Paragraph } = Typography
+const TEMP_KEY_COOLDOWN_STORAGE = 'qqbot_temp_key_cooldown_until'
+const DEFAULT_TEMP_KEY_COOLDOWN_SEC = 5 * 60
 
 function useNotify() {
   const { message } = AntApp.useApp()
@@ -51,6 +57,23 @@ function confirmAction(modal, options) {
       onCancel: () => resolve(false),
     })
   })
+}
+
+function formatRemain(sec) {
+  const s = Math.max(0, Math.ceil(sec))
+  const m = Math.floor(s / 60)
+  const r = s % 60
+  return `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`
+}
+
+function readCooldownUntil() {
+  const raw = Number(localStorage.getItem(TEMP_KEY_COOLDOWN_STORAGE) || 0)
+  return Number.isFinite(raw) && raw > Date.now() ? raw : 0
+}
+
+function writeCooldownUntil(untilMs) {
+  if (untilMs > Date.now()) localStorage.setItem(TEMP_KEY_COOLDOWN_STORAGE, String(untilMs))
+  else localStorage.removeItem(TEMP_KEY_COOLDOWN_STORAGE)
 }
 
 function Brand({ sub }) {
@@ -76,14 +99,42 @@ function LoginView({ onAuthed }) {
   const notify = useNotify()
   const [mode, setMode] = useState('temp')
   const [busy, setBusy] = useState(false)
+  const [keyReady, setKeyReady] = useState(false)
+  const [cooldownUntil, setCooldownUntil] = useState(() => readCooldownUntil())
+  const [now, setNow] = useState(() => Date.now())
   const [form] = Form.useForm()
 
+  const remainSec = Math.max(0, Math.ceil((cooldownUntil - now) / 1000))
+  const onCooldown = remainSec > 0
+
+  useEffect(() => {
+    if (!onCooldown) {
+      writeCooldownUntil(0)
+      return undefined
+    }
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [onCooldown])
+
+  const startCooldown = (seconds) => {
+    const sec = Math.max(1, Number(seconds) || DEFAULT_TEMP_KEY_COOLDOWN_SEC)
+    const until = Date.now() + sec * 1000
+    writeCooldownUntil(until)
+    setCooldownUntil(until)
+    setNow(Date.now())
+  }
+
   const requestKey = async () => {
+    if (onCooldown) return
     setBusy(true)
     try {
-      await api.requestTempKey()
-      notify('临时 Key 已生成，请查看主服后台日志')
+      const data = await api.requestTempKey()
+      const cooldown = data?.cooldownSeconds || DEFAULT_TEMP_KEY_COOLDOWN_SEC
+      startCooldown(cooldown)
+      setKeyReady(true)
+      notify('临时 Key 已写入主服日志，请复制到下方')
     } catch (err) {
+      if (err.retryAfter > 0) startCooldown(err.retryAfter)
       notify(err.message, 'error')
     } finally {
       setBusy(false)
@@ -106,46 +157,88 @@ function LoginView({ onAuthed }) {
 
   return (
     <div className="login-wrap">
-      <Card className="login-card" style={{ width: '100%', maxWidth: 400 }}>
-        <Brand sub="临时 Key 或管理密码登录" />
+      <Card className="login-card" bordered={false}>
+        <Brand sub="管理控制台登录" />
         <Divider style={{ margin: '20px 0 16px' }} />
-        <Tabs
-          activeKey={mode}
+        <Segmented
+          block
+          value={mode}
           onChange={setMode}
-          items={[
-            { key: 'temp', label: '临时 Key' },
-            { key: 'password', label: '密码' },
+          options={[
+            { label: '临时 Key', value: 'temp', icon: <KeyOutlined /> },
+            { label: '管理密码', value: 'password', icon: <LockOutlined /> },
           ]}
+          style={{ marginBottom: 16 }}
         />
-        <Form form={form} layout="vertical" onFinish={submit} requiredMark={false}>
+        <Form form={form} layout="vertical" onFinish={submit} requiredMark={false} size="middle">
           {mode === 'temp' ? (
-            <>
+            <div className="login-temp-panel">
+              <ol className="login-steps">
+                <li>点击获取，Key 打在主服后台日志</li>
+                <li>复制到下方输入框后登录（Key 约 5 分钟有效）</li>
+                <li>同一 IP 每 5 分钟只能获取 1 次</li>
+              </ol>
+              {keyReady ? (
+                <Alert
+                  type="success"
+                  showIcon
+                  className="login-alert"
+                  message="Key 已生成"
+                  description="请到运行 node app 的终端日志中查找 QQBot temp-key，复制后登录。"
+                />
+              ) : null}
+              {onCooldown ? (
+                <Alert
+                  type="info"
+                  showIcon
+                  className="login-alert"
+                  message={`获取冷却中 ${formatRemain(remainSec)}`}
+                  description="冷却结束后才能再次获取；已发出的 Key 在有效期内仍可登录。"
+                />
+              ) : null}
               <Form.Item
                 name="tempKey"
                 label="临时 Key"
                 rules={[{ required: true, message: '请输入临时 Key' }]}
               >
-                <Input placeholder="从主服日志复制" autoComplete="off" />
+                <Input
+                  prefix={<KeyOutlined style={{ color: '#8c8c8c' }} />}
+                  placeholder="从主服日志复制"
+                  autoComplete="off"
+                  allowClear
+                />
               </Form.Item>
-              <Form.Item>
-                <Button onClick={requestKey} loading={busy} block>
-                  点击获取
-                </Button>
-              </Form.Item>
-            </>
+              <Button
+                onClick={requestKey}
+                loading={busy}
+                disabled={onCooldown}
+                block
+                className="login-get-key-btn"
+              >
+                {onCooldown ? `冷却中 ${formatRemain(remainSec)}` : '获取临时 Key'}
+              </Button>
+            </div>
           ) : (
             <Form.Item
               name="password"
               label="管理密码"
               rules={[{ required: true, message: '请输入密码' }]}
+              extra="在 data/QQBot.json 的 adminPassword 中配置"
             >
-              <Input.Password autoComplete="current-password" />
+              <Input.Password
+                prefix={<LockOutlined style={{ color: '#8c8c8c' }} />}
+                autoComplete="current-password"
+                placeholder="管理密码"
+              />
             </Form.Item>
           )}
-          <Button type="primary" htmlType="submit" loading={busy} block size="large">
+          <Button type="primary" htmlType="submit" loading={busy} block size="large" className="login-submit">
             登录
           </Button>
         </Form>
+        <Paragraph type="secondary" className="login-foot-hint">
+          推荐临时 Key；密码适合长期运维。
+        </Paragraph>
       </Card>
     </div>
   )

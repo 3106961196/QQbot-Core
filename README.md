@@ -47,7 +47,7 @@ cd www/qqbot && pnpm install && pnpm build && cd ../..
    `{getServerUrl()}/qqbot/`  
    （调试直链：`/core/QQbot-Core/qqbot/`）
 
-3. 「点击获取」临时 Key → 看后台日志 → 登录 → 添加账号（先「校验凭证」再「保存并连接」；校验只换 AccessToken，不占网关登录）
+3. 「获取临时 Key」→ 看后台日志 → 登录 → 添加账号（先「校验凭证」再「保存并连接」；校验只换 AccessToken，不占网关登录）。同一 IP **5 分钟只能获取 1 次**临时 Key。
 
 运行时文件：仓库根目录 **`data/QQBot.json`**（首次启动会从 `default/qqbot.json` 自动创建；不要只改模板）。
 

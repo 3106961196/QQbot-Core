@@ -18,7 +18,12 @@ async function request(path, options = {}) {
     throw new Error(res.ok ? '响应不是 JSON' : `HTTP ${res.status}`)
   }
   if (!res.ok && !json?.success) {
-    throw new Error(json?.message || `HTTP ${res.status}`)
+    const err = new Error(json?.message || `HTTP ${res.status}`)
+    err.status = res.status
+    err.code = json?.code
+    const headerRetry = Number(res.headers.get('Retry-After'))
+    err.retryAfter = Number(json?.retryAfter) || (Number.isFinite(headerRetry) ? headerRetry : 0)
+    throw err
   }
   return unwrapSuccess(json)
 }
