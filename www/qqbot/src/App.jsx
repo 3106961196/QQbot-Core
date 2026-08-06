@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Alert,
   App as AntApp,
   Avatar,
   Button,
@@ -11,7 +10,6 @@ import {
   Input,
   InputNumber,
   Modal,
-  Segmented,
   Space,
   Spin,
   Switch,
@@ -24,7 +22,6 @@ import {
   ApiOutlined,
   DisconnectOutlined,
   KeyOutlined,
-  LockOutlined,
   LogoutOutlined,
   PlusOutlined,
   ReloadOutlined,
@@ -34,19 +31,16 @@ import {
 import { api } from './api.js'
 import { deepClone } from './compat.js'
 
-const { Text, Paragraph } = Typography
+const { Text } = Typography
 const TEMP_KEY_COOLDOWN_STORAGE = 'qqbot_temp_key_cooldown_until'
 const DEFAULT_TEMP_KEY_COOLDOWN_SEC = 5 * 60
+const STATUS_POLL_MS = 20000
 
-function useNotify() {
+function useNotifyError() {
   const { message } = AntApp.useApp()
-  return useCallback(
-    (text, type = 'ok') => {
-      if (type === 'error') message.error(text)
-      else message.success(text)
-    },
-    [message],
-  )
+  return useCallback((text) => {
+    if (text) message.error(String(text))
+  }, [message])
 }
 
 function confirmAction(modal, options) {
@@ -96,10 +90,8 @@ function Brand({ sub }) {
 }
 
 function LoginView({ onAuthed }) {
-  const notify = useNotify()
-  const [mode, setMode] = useState('temp')
+  const notifyError = useNotifyError()
   const [busy, setBusy] = useState(false)
-  const [keyReady, setKeyReady] = useState(false)
   const [cooldownUntil, setCooldownUntil] = useState(() => readCooldownUntil())
   const [now, setNow] = useState(() => Date.now())
   const [form] = Form.useForm()
@@ -129,13 +121,10 @@ function LoginView({ onAuthed }) {
     setBusy(true)
     try {
       const data = await api.requestTempKey()
-      const cooldown = data?.cooldownSeconds || DEFAULT_TEMP_KEY_COOLDOWN_SEC
-      startCooldown(cooldown)
-      setKeyReady(true)
-      notify('临时 Key 已写入主服日志，请复制到下方')
+      startCooldown(data?.cooldownSeconds || DEFAULT_TEMP_KEY_COOLDOWN_SEC)
     } catch (err) {
       if (err.retryAfter > 0) startCooldown(err.retryAfter)
-      notify(err.message, 'error')
+      notifyError(err.message)
     } finally {
       setBusy(false)
     }
@@ -144,12 +133,10 @@ function LoginView({ onAuthed }) {
   const submit = async (values) => {
     setBusy(true)
     try {
-      if (mode === 'temp') await api.tempLogin(String(values.tempKey || '').trim())
-      else await api.login(values.password)
-      notify('登录成功')
+      await api.tempLogin(String(values.tempKey || '').trim())
       onAuthed()
     } catch (err) {
-      notify(err.message, 'error')
+      notifyError(err.message)
     } finally {
       setBusy(false)
     }
@@ -158,87 +145,39 @@ function LoginView({ onAuthed }) {
   return (
     <div className="login-wrap">
       <Card className="login-card" bordered={false}>
-        <Brand sub="管理控制台登录" />
+        <Brand sub="临时 Key 登录" />
         <Divider style={{ margin: '20px 0 16px' }} />
-        <Segmented
-          block
-          value={mode}
-          onChange={setMode}
-          options={[
-            { label: '临时 Key', value: 'temp', icon: <KeyOutlined /> },
-            { label: '管理密码', value: 'password', icon: <LockOutlined /> },
-          ]}
-          style={{ marginBottom: 16 }}
-        />
         <Form form={form} layout="vertical" onFinish={submit} requiredMark={false} size="middle">
-          {mode === 'temp' ? (
-            <div className="login-temp-panel">
-              <ol className="login-steps">
-                <li>点击获取，Key 打在主服后台日志</li>
-                <li>复制到下方输入框后登录（Key 约 5 分钟有效）</li>
-                <li>同一 IP 每 5 分钟只能获取 1 次</li>
-              </ol>
-              {keyReady ? (
-                <Alert
-                  type="success"
-                  showIcon
-                  className="login-alert"
-                  message="Key 已生成"
-                  description="请到运行 node app 的终端日志中查找 QQBot temp-key，复制后登录。"
-                />
-              ) : null}
-              {onCooldown ? (
-                <Alert
-                  type="info"
-                  showIcon
-                  className="login-alert"
-                  message={`获取冷却中 ${formatRemain(remainSec)}`}
-                  description="冷却结束后才能再次获取；已发出的 Key 在有效期内仍可登录。"
-                />
-              ) : null}
-              <Form.Item
-                name="tempKey"
-                label="临时 Key"
-                rules={[{ required: true, message: '请输入临时 Key' }]}
-              >
-                <Input
-                  prefix={<KeyOutlined style={{ color: '#8c8c8c' }} />}
-                  placeholder="从主服日志复制"
-                  autoComplete="off"
-                  allowClear
-                />
-              </Form.Item>
-              <Button
-                onClick={requestKey}
-                loading={busy}
-                disabled={onCooldown}
-                block
-                className="login-get-key-btn"
-              >
-                {onCooldown ? `冷却中 ${formatRemain(remainSec)}` : '获取临时 Key'}
-              </Button>
-            </div>
-          ) : (
+          <div className="login-temp-panel">
+            <p className="login-hint">
+              获取后 Key 写入主服日志，<strong>1 天内</strong>可登录一次；同一 IP 每 5 分钟只能获取 1 次。
+            </p>
             <Form.Item
-              name="password"
-              label="管理密码"
-              rules={[{ required: true, message: '请输入密码' }]}
-              extra="在 data/QQBot.json 的 adminPassword 中配置"
+              name="tempKey"
+              label="临时 Key"
+              rules={[{ required: true, message: '请输入临时 Key' }]}
             >
-              <Input.Password
-                prefix={<LockOutlined style={{ color: '#8c8c8c' }} />}
-                autoComplete="current-password"
-                placeholder="管理密码"
+              <Input
+                prefix={<KeyOutlined style={{ color: '#8c8c8c' }} />}
+                placeholder="从主服日志复制"
+                autoComplete="off"
+                allowClear
               />
             </Form.Item>
-          )}
+            <Button
+              onClick={requestKey}
+              loading={busy}
+              disabled={onCooldown}
+              block
+              className="login-get-key-btn"
+            >
+              {onCooldown ? `冷却中 ${formatRemain(remainSec)}` : '获取临时 Key'}
+            </Button>
+          </div>
           <Button type="primary" htmlType="submit" loading={busy} block size="large" className="login-submit">
             登录
           </Button>
         </Form>
-        <Paragraph type="secondary" className="login-foot-hint">
-          推荐临时 Key；密码适合长期运维。
-        </Paragraph>
       </Card>
     </div>
   )
@@ -288,7 +227,7 @@ function GlobalConfigForm({ form }) {
 }
 
 function GlobalConfigModal({ open, onClose, onSaved }) {
-  const notify = useNotify()
+  const notifyError = useNotifyError()
   const [form] = Form.useForm()
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -313,7 +252,7 @@ function GlobalConfigModal({ open, onClose, onSaved }) {
           timeout: data.bot?.timeout ?? 30000,
         })
       } catch (err) {
-        notify(err.message, 'error')
+        notifyError(err.message)
         onClose()
       } finally {
         if (!cancelled) setLoading(false)
@@ -322,7 +261,7 @@ function GlobalConfigModal({ open, onClose, onSaved }) {
     return () => {
       cancelled = true
     }
-  }, [open, form, notify, onClose])
+  }, [open, form, notifyError, onClose])
 
   const save = async () => {
     const values = await form.validateFields()
@@ -341,11 +280,10 @@ function GlobalConfigModal({ open, onClose, onSaved }) {
           timeout: values.timeout,
         },
       })
-      notify('全局配置已保存')
       onSaved?.()
       onClose()
     } catch (err) {
-      notify(err.message, 'error')
+      notifyError(err.message)
     } finally {
       setSaving(false)
     }
@@ -372,7 +310,7 @@ function GlobalConfigModal({ open, onClose, onSaved }) {
 }
 
 function AddBotModal({ open, onClose, onAdded }) {
-  const notify = useNotify()
+  const notifyError = useNotifyError()
   const [form] = Form.useForm()
   const [busy, setBusy] = useState(false)
   /** 仅当前 AppID+Secret 测通后才允许保存 */
@@ -403,10 +341,9 @@ function AddBotModal({ open, onClose, onAdded }) {
       const clientSecret = values.clientSecret.trim()
       await api.testConnect({ appId, clientSecret })
       setVerifiedKey(`${appId}\0${clientSecret}`)
-      notify('凭证有效，保存时才会正式登录连接')
     } catch (err) {
       setVerifiedKey('')
-      notify(err.message || '凭证校验失败，未保存', 'error')
+      notifyError(err.message || '凭证校验失败')
     } finally {
       setBusy(false)
     }
@@ -417,7 +354,7 @@ function AddBotModal({ open, onClose, onAdded }) {
     const appId = values.appId.trim()
     const clientSecret = values.clientSecret.trim()
     if (`${appId}\0${clientSecret}` !== verifiedKey) {
-      notify('请先校验凭证成功再保存', 'error')
+      notifyError('请先校验凭证再保存')
       return
     }
     setBusy(true)
@@ -428,11 +365,10 @@ function AddBotModal({ open, onClose, onAdded }) {
         enabled: values.enabled !== false,
         markdownSupport: !!values.markdownSupport,
       })
-      notify('账号已添加（昵称连接后自动获取）')
       onAdded?.()
       onClose()
     } catch (err) {
-      notify(err.message, 'error')
+      notifyError(err.message)
     } finally {
       setBusy(false)
     }
@@ -490,8 +426,8 @@ const ACCOUNT_SWITCHES = [
   ['toBotUpload', 'Bot 图床'],
 ]
 
-function BotSettingsModal({ bot, onClose }) {
-  const notify = useNotify()
+function BotSettingsModal({ bot, onClose, onSaved }) {
+  const notifyError = useNotifyError()
   const { modal } = AntApp.useApp()
   const [form] = Form.useForm()
   const [masters, setMasters] = useState([])
@@ -515,7 +451,7 @@ function BotSettingsModal({ bot, onClose }) {
         form.setFieldsValue(deepClone(cfgRes.config || cfgRes))
         setMasters(masterRes.masters || [])
       } catch (err) {
-        notify(err.message, 'error')
+        notifyError(err.message)
         onClose()
       } finally {
         if (!cancelled) setLoading(false)
@@ -524,7 +460,7 @@ function BotSettingsModal({ bot, onClose }) {
     return () => {
       cancelled = true
     }
-  }, [bot, form, notify, onClose])
+  }, [bot, form, notifyError, onClose])
 
   if (!bot) return null
 
@@ -533,9 +469,9 @@ function BotSettingsModal({ bot, onClose }) {
     setBusy(true)
     try {
       await api.putAccountConfig(bot.appId, values)
-      notify('账号配置已保存')
+      onSaved?.()
     } catch (err) {
-      notify(err.message, 'error')
+      notifyError(err.message)
     } finally {
       setBusy(false)
     }
@@ -550,9 +486,8 @@ function BotSettingsModal({ bot, onClose }) {
       setNewMaster('')
       const res = await api.listMasters(bot.id)
       setMasters(res.masters || [])
-      notify('已添加主人')
     } catch (err) {
-      notify(err.message, 'error')
+      notifyError(err.message)
     } finally {
       setBusy(false)
     }
@@ -570,9 +505,8 @@ function BotSettingsModal({ bot, onClose }) {
     try {
       await api.removeMaster(bot.id, m)
       setMasters((list) => list.filter((x) => x !== m))
-      notify('已移除主人')
     } catch (err) {
-      notify(err.message, 'error')
+      notifyError(err.message)
     } finally {
       setBusy(false)
     }
@@ -688,38 +622,58 @@ function BotSettingsModal({ bot, onClose }) {
 }
 
 function Dashboard({ onLogout }) {
-  const notify = useNotify()
+  const notifyError = useNotifyError()
   const { modal } = AntApp.useApp()
   const [status, setStatus] = useState(null)
   const [busyId, setBusyId] = useState('')
   const [showGlobal, setShowGlobal] = useState(false)
   const [showAdd, setShowAdd] = useState(false)
   const [editBot, setEditBot] = useState(null)
+  const refreshing = useRef(false)
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async ({ silent = true } = {}) => {
+    if (refreshing.current) return
+    refreshing.current = true
     try {
       const data = await api.status()
       setStatus(data)
     } catch (err) {
-      notify(err.message, 'error')
-      if (/Unauthorized|未授权|登录|Forbidden/i.test(err.message)) onLogout()
+      if (/Unauthorized|未授权|登录|Forbidden/i.test(err.message || '')) {
+        onLogout()
+        return
+      }
+      if (!silent) notifyError(err.message)
+    } finally {
+      refreshing.current = false
     }
-  }, [notify, onLogout])
+  }, [notifyError, onLogout])
 
   useEffect(() => {
-    refresh()
-    const t = setInterval(refresh, 8000)
-    return () => clearInterval(t)
+    let cancelled = false
+    const tick = () => {
+      if (cancelled || document.visibilityState === 'hidden') return
+      refresh({ silent: true })
+    }
+    tick()
+    const t = setInterval(tick, STATUS_POLL_MS)
+    const onVis = () => {
+      if (document.visibilityState === 'visible') tick()
+    }
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      cancelled = true
+      clearInterval(t)
+      document.removeEventListener('visibilitychange', onVis)
+    }
   }, [refresh])
 
-  const run = async (id, fn, okMsg) => {
+  const run = async (id, fn) => {
     setBusyId(id)
     try {
       await fn()
-      if (okMsg) notify(okMsg)
-      await refresh()
+      await refresh({ silent: true })
     } catch (err) {
-      notify(err.message, 'error')
+      notifyError(err.message)
     } finally {
       setBusyId('')
     }
@@ -771,7 +725,7 @@ function Dashboard({ onLogout }) {
                 size="small"
                 icon={<DisconnectOutlined />}
                 loading={busyId === bot.appId}
-                onClick={() => run(bot.appId, () => api.disconnect(bot.appId), '已断开')}
+                onClick={() => run(bot.appId, () => api.disconnect(bot.appId))}
               >
                 断开
               </Button>
@@ -780,7 +734,7 @@ function Dashboard({ onLogout }) {
                 size="small"
                 icon={<ApiOutlined />}
                 loading={busyId === bot.appId}
-                onClick={() => run(bot.appId, () => api.reconnect(bot.appId), '重连成功')}
+                onClick={() => run(bot.appId, () => api.reconnect(bot.appId))}
               >
                 重连
               </Button>
@@ -797,7 +751,7 @@ function Dashboard({ onLogout }) {
                   okButtonProps: { danger: true },
                 })
                 if (!ok) return
-                run(bot.appId, () => api.removeAccount(bot.appId), '已删除')
+                run(bot.appId, () => api.removeAccount(bot.appId))
               }}
             >
               删除
@@ -818,13 +772,13 @@ function Dashboard({ onLogout }) {
       <header className="app-header">
         <Brand sub={sub} />
         <Space wrap>
-          <Button icon={<ReloadOutlined />} onClick={() => refresh()}>
+          <Button icon={<ReloadOutlined />} onClick={() => refresh({ silent: false })}>
             刷新
           </Button>
           <Button
             icon={<SyncOutlined />}
             loading={busyId === 'reload'}
-            onClick={() => run('reload', () => api.reload(), '配置已重载')}
+            onClick={() => run('reload', () => api.reload())}
           >
             重载
           </Button>
@@ -864,9 +818,15 @@ function Dashboard({ onLogout }) {
         </Card>
       </main>
 
-      <GlobalConfigModal open={showGlobal} onClose={() => setShowGlobal(false)} onSaved={refresh} />
-      <AddBotModal open={showAdd} onClose={() => setShowAdd(false)} onAdded={refresh} />
-      {editBot ? <BotSettingsModal bot={editBot} onClose={() => setEditBot(null)} /> : null}
+      <GlobalConfigModal open={showGlobal} onClose={() => setShowGlobal(false)} onSaved={() => refresh({ silent: true })} />
+      <AddBotModal open={showAdd} onClose={() => setShowAdd(false)} onAdded={() => refresh({ silent: true })} />
+      {editBot ? (
+        <BotSettingsModal
+          bot={editBot}
+          onClose={() => setEditBot(null)}
+          onSaved={() => refresh({ silent: true })}
+        />
+      ) : null}
     </div>
   )
 }

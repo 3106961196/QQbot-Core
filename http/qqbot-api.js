@@ -10,7 +10,8 @@ const APP_ACCESS_TOKEN_URL = 'https://bots.qq.com/app/getAppAccessToken'
 const SESSION_COOKIE_NAME = 'qqbot_session'
 const SESSION_EXPIRE_MS = 15 * 24 * 60 * 60 * 1000
 const sessions = new Map()
-const TEMP_KEY_EXPIRE_MS = 5 * 60 * 1000
+/** 临时 Key 有效期 1 天（单次兑换登录） */
+const TEMP_KEY_EXPIRE_MS = 24 * 60 * 60 * 1000
 const tempKeys = new Map()
 
 /** 临时 Key：同一 IP 5 分钟内仅可获取 1 次 */
@@ -213,11 +214,11 @@ export default {
         try {
           const tempKey = createTempKey()
           markTempKeyIssued(ip)
-          RuntimeUtil.makeLog('mark', `QQBot temp-key: ${tempKey} (5min) IP: ${ip}`, 'QQBot')
+          RuntimeUtil.makeLog('mark', `QQBot temp-key: ${tempKey} (1d) IP: ${ip}`, 'QQBot')
           HttpResponse.success(res, {
             cooldownSeconds: Math.floor(TEMP_KEY_COOLDOWN_MS / 1000),
             keyTtlSeconds: Math.floor(TEMP_KEY_EXPIRE_MS / 1000),
-          }, '临时 Key 已写入主服日志，5 分钟内有效')
+          }, '临时 Key 已写入主服日志，1 天内有效')
         } catch (err) {
           RuntimeUtil.makeLog('error', `生成临时Key异常: ${err.message}`, 'QQBot', err)
           HttpResponse.error(res, err, 500, 'auth.temp-key')
@@ -248,55 +249,6 @@ export default {
         RuntimeUtil.makeLog('info', `temp-key login OK IP: ${ip}`, 'QQBot')
         HttpResponse.success(res, { message: '登录成功' })
       }, 'qqbot.auth.temp-login')
-    },
-    
-    {
-      method: 'POST',
-      path: '/api/qqbot/auth/login',
-      systemAuth: false,
-      handler: HttpResponse.asyncHandler(async (req, res, Bot) => {
-        const { password } = req.body || {}
-        const ip = req.ip || req.connection?.remoteAddress || 'unknown'
-        
-        if (!password) {
-          return HttpResponse.validationError(res, '密码不能为空')
-        }
-        
-        const qqbotConfig = await ConfigLoader.get('qqbot')?.read() || {}
-        const adminPassword = qqbotConfig.adminPassword
-        
-        if (!adminPassword) {
-          RuntimeUtil.makeLog('error', 'QQBot 管理密码未配置，请在 QQBot.json 中设置 adminPassword', 'QQBot')
-          return HttpResponse.error(res, null, 500, '管理密码未配置')
-        }
-        
-        try {
-          const inputBuffer = Buffer.from(String(password), 'utf8')
-          const storedBuffer = Buffer.from(String(adminPassword), 'utf8')
-          
-          // 填充到相同长度后再比较，避免泄露密码长度信息
-          const maxLen = Math.max(inputBuffer.length, storedBuffer.length)
-          const paddedInput = Buffer.alloc(maxLen)
-          const paddedStored = Buffer.alloc(maxLen)
-          inputBuffer.copy(paddedInput)
-          storedBuffer.copy(paddedStored)
-          
-          const valid = crypto.timingSafeEqual(paddedInput, paddedStored)
-          if (!valid) {
-            RuntimeUtil.makeLog('warn', `[登录失败] 密码错误 IP: ${ip}`, 'QQBot')
-            return HttpResponse.forbidden(res, '密码错误')
-          }
-          
-          const sessionId = createSession(ip)
-        setSessionCookie(req, res, sessionId)
-          
-          RuntimeUtil.makeLog('info', `login OK IP: ${ip}`, 'QQBot')
-          HttpResponse.success(res, { message: '登录成功' })
-        } catch (err) {
-          RuntimeUtil.makeLog('error', `登录异常: ${err.message}`, 'QQBot', err)
-          HttpResponse.error(res, err, 500, 'auth.login')
-        }
-      }, 'qqbot.auth.login')
     },
     
     {

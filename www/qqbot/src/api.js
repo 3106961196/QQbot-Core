@@ -32,7 +32,6 @@ export const api = {
   checkAuth: () => request('/api/qqbot/auth/check'),
   requestTempKey: () => request('/api/qqbot/auth/temp-key', { method: 'POST', body: {} }),
   tempLogin: (tempKey) => request('/api/qqbot/auth/temp-login', { method: 'POST', body: { tempKey } }),
-  login: (password) => request('/api/qqbot/auth/login', { method: 'POST', body: { password } }),
   logout: () => request('/api/qqbot/auth/logout', { method: 'POST', body: {} }),
 
   status: () => request('/api/qqbot/status'),

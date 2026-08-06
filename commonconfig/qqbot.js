@@ -21,13 +21,6 @@ export default class QQBotConfig extends ConfigBase {
             default: 'QQBot 官方机器人配置',
             component: 'Input'
           },
-          adminPassword: {
-            type: 'string',
-            label: '管理密码',
-            description: 'Web 管理页密码登录（可选；推荐临时 Key）',
-            default: '',
-            component: 'Password'
-          },
           accounts: {
             type: 'array',
             label: '机器人账户列表',

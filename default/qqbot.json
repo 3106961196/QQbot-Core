@@ -1,6 +1,5 @@
 {
   "tips": "QQBot 官方机器人配置",
-  "adminPassword": "",
   "accounts": [],
   "bot": {
     "sandbox": false,

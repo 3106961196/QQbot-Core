@@ -99,9 +99,9 @@ body {
   margin-bottom: 4px;
 }
 
-.login-steps {
+.login-hint {
   margin: 0 0 4px;
-  padding: 10px 10px 10px 28px;
+  padding: 10px 12px;
   background: #f5f8fc;
   border: 1px solid #e8eef6;
   border-radius: 8px;
@@ -110,26 +110,12 @@ body {
   line-height: 1.55;
 }
 
-.login-steps li + li {
-  margin-top: 2px;
-}
-
-.login-alert {
-  margin-bottom: 2px;
-}
-
 .login-get-key-btn {
   margin-bottom: 4px;
 }
 
 .login-submit {
   margin-top: 8px;
-}
-
-.login-foot-hint {
-  margin: 14px 0 0 !important;
-  text-align: center;
-  font-size: 12px !important;
 }
 
 /* 弹窗：内容区限高，footer 不被挤出视口 */
