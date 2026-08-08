@@ -1,5 +1,5 @@
-import CommonConfigRegistry from '../../../src/infrastructure/commonconfig/loader.js'
-import { normalizeError } from '../../../src/utils/normalize-error.js'
+import CommonConfigRegistry from '../../src/infrastructure/commonconfig/loader.js'
+import { normalizeError } from '../../src/utils/normalize-error.js'
 
 ;(async () => {
   try {
