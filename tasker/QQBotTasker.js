@@ -3,6 +3,7 @@ import ConfigLoader from '../../../src/infrastructure/commonconfig/loader.js'
 import { MessageBuilder } from './message-builder.js'
 import { MessageHandler } from './message-handler.js'
 import { ConnectionManager } from './connection-manager.js'
+import { attachRequest } from './request.js'
 
 const LOG = 'QQBot'
 /** 产品页在 www/qqbot/ → 底层挂 /qqbot/（/core/QQbot-Core/ 仅为整棵 www 调试直链） */
@@ -254,7 +255,7 @@ AgentRuntime.tasker.push(
 
     createBotEntry(id, sdk, opts) {
       const tasker = this
-      return {
+      const entry = {
         tasker,
         sdk,
         loginError: null,
@@ -325,6 +326,9 @@ AgentRuntime.tasker.push(
         gml: new Map(),
         callback: {},
       }
+      // R8：通用 OpenAPI 入口（限频 + NotImplemented 保护），插件可用 e.bot.request(...)
+      attachRequest(entry)
+      return entry
     }
 
     wireSdkLogger(id, sdk) {
