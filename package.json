@@ -4,6 +4,10 @@
   "description": "QQBot Core for XRK-AGT - QQ官方机器人适配器",
   "main": "index.js",
   "type": "module",
+  "scripts": {
+    "test": "node --test test/",
+    "test:fast": "node --test test/"
+  },
   "engines": {
     "node": ">=26.0.0"
   },

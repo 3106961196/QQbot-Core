@@ -2,6 +2,7 @@ import { Bot as QQBotSDK } from 'qq-group-bot'
 import ConfigLoader from '../../../src/infrastructure/commonconfig/loader.js'
 import { MessageBuilder } from './message-builder.js'
 import { MessageHandler } from './message-handler.js'
+import { ConnectionManager } from './connection-manager.js'
 
 const LOG = 'QQBot'
 /** 产品页在 www/qqbot/ → 底层挂 /qqbot/（/core/QQbot-Core/ 仅为整棵 www 调试直链） */
@@ -86,6 +87,7 @@ AgentRuntime.tasker.push(
         this.messageHandler.setMessageBuilder(this.messageBuilder)
         this.setupWebHook()
         this.printWebUrl()
+        this.initConnectionManager()
         this.scheduleBotConnection()
         AgentRuntime.makeLog('mark', `${this.name}(${this.id}) ${this.version} 加载完成`, LOG)
       } catch (err) {
@@ -142,6 +144,34 @@ AgentRuntime.tasker.push(
       }
     }
 
+    /** 初始化连接编排：启动失败退避 / 断连限速督办 */
+    initConnectionManager() {
+      this.connectionManager = new ConnectionManager({
+        connectFn: account => this.connect(account),
+        onStatus: (state, detail) => {
+          const { key } = detail || {}
+          switch (state) {
+            case 'connected':
+              AgentRuntime.makeLog('info', `连接编排: ${key} 已就绪`, key || LOG)
+              break
+            case 'retrying':
+              AgentRuntime.makeLog('warn', `连接编排: ${key} 第 ${detail.attempt} 次重试（${detail.delay}s 后），原因: ${detail.reason}`, key || LOG)
+              break
+            case 'rate-limited':
+              AgentRuntime.makeLog('warn', `连接编排: ${key} 断连过于频繁，限速 ${Math.round(detail.cooldownMs / 1000)}s`, key || LOG)
+              break
+            case 'reconnecting':
+              AgentRuntime.makeLog('info', `连接编排: ${key} 断连后重连中（${detail.reason || '未知原因'}）`, key || LOG)
+              break
+            case 'give-up':
+              AgentRuntime.makeLog('error', `连接编排: ${key} 重试耗尽，放弃自动重连（原因: ${detail.reason}）`, key || LOG)
+              break
+          }
+        },
+      })
+    }
+
+    /** 自动编排：启动时对每个账号建立连接，失败走退避重试 */
     async setupBots() {
       this.printWebUrl()
       for (const account of this.config.accounts || []) {
@@ -150,11 +180,7 @@ AgentRuntime.tasker.push(
           AgentRuntime.makeLog('info', `跳过自动连接: ${botIdOf(account)}`, LOG)
           continue
         }
-        try {
-          await this.connect(account)
-        } catch (err) {
-          AgentRuntime.makeLog('error', `连接失败 ${account.appId}: ${errMsg(err)}`, LOG)
-        }
+        this.connectionManager.start(account)
       }
     }
 
@@ -165,7 +191,16 @@ AgentRuntime.tasker.push(
 
     async connect(account) {
       const id = botIdOf(account)
-      if (this.bots.has(id)) await this.disconnect(id)
+      // 已有连接：轻量清理（不触发 disconnect 的 stop 编排逻辑）
+      if (this.bots.has(id)) {
+        try {
+          const old = this.bots.get(id)
+          old?.sdk?.removeAllListeners?.('message')
+          old?.sdk?.removeAllListeners?.('notice')
+          await old?.logout?.()
+        } catch { /* ignore */ }
+        this.cleanupBot(id)
+      }
 
       const opts = {
         ...this.config.bot,
@@ -210,6 +245,8 @@ AgentRuntime.tasker.push(
       this.appid[account.appId] = { uin: id, sdk, info: { secret: account.clientSecret } }
 
       AgentRuntime.makeLog('mark', `${this.name} ${bot.nickname || id} 已连接`, id)
+      // 连接成功：纳入编排（若已存在则不重复），DEAD 断连时受自动重连保护
+      this.connectionManager?.adopt(account)
       AgentRuntime.em('qqbot.connect', { self_id: id })
       AgentRuntime.em(`connect.${id}`, { self_id: id })
       return true
@@ -323,8 +360,11 @@ AgentRuntime.tasker.push(
           const reason = data.msg || '连接断开'
           if (/11298|IP不在白名单/.test(reason)) {
             AgentRuntime.makeLog('error', `连接失败: IP 不在白名单 (${id})`, LOG)
+            this.connectionManager?.stop(id)
           } else {
             AgentRuntime.makeLog('warn', `已断开: ${reason}`, id)
+            // 交由连接编排重连（限速/退避由 connection-manager 负责）
+            this.connectionManager?.reportDisconnect(id, reason)
           }
           this.cleanupBot(id, reason)
         } catch (err) {
@@ -355,6 +395,8 @@ AgentRuntime.tasker.push(
       const bot = this.bots.get(id)
       if (!bot) return
       AgentRuntime.makeLog('mark', `${bot.nickname || id} 断开连接`, id)
+      // 手动断开：停止自动重连编排，避免立刻被连回来
+      this.connectionManager?.stop(id)
       try {
         bot.sdk.removeAllListeners('message')
         bot.sdk.removeAllListeners('notice')
