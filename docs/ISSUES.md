@@ -17,7 +17,7 @@
 - **现象**：`SessionManager` 已覆盖 HELLO 心跳间隔、op=9 INVALID_SESSION、op=7 RECONNECT、4009 Resume、重试上限 `maxRetry`；但 Tasker 只在 `DEAD` 时 `cleanupBot`。`login()` 30s 超时 + READY/DEAD 竞态处理粗糙。
 - **影响**：会话静默死亡、重连风暴无法察觉。
 - **方案**：新增 `connection-manager.js`，Tasker 侧接管心跳监控/重连编排/退避限速日志；`QQBotTasker.connect` 改走 manager。
-- **状态**：⬜ 待办
+- **状态**：✅ 已解决（P0-1，`tasker/connection-manager.js`；启动退避 5/10/30/60s、5s 内断连≥3 次限速 60s、DEAD 自动重连；测试 `test/connection-manager.test.js`）
 
 ### R2（P0）SDK 断线重连与 token 续期缺陷（已核实代码，修正原报告描述）
 
@@ -36,7 +36,7 @@
 - **现象**：`connect()` 中 `getAccessToken` / `getWsUrl` 失败 → `reject` → `setupBots` 捕获后仅记日志。`autoConnect` 账号启动失败后当天不再重试，需手动 reconnect。
 - **影响**：临时网络故障 / 网关抖动导致机器人永久离线。
 - **方案**：`connection-manager.js` 启动退避重试 5/10/30/60s。
-- **状态**：⬜ 待办
+- **状态**：✅ 已解决（P0-1，并入 connection-manager 启动编排）
 
 ---
 
@@ -79,7 +79,7 @@
 - **现象**：SDK `bot.js` 有 70+ API，但项目仅暴露消息收发/撤回；禁言/踢人/角色/置顶/反应等未封装。
 - **影响**：扩张困难，被迫改 SDK 或加专用封装。
 - **方案**：新增 `request.js`，`bot.request(method, path, payload)`，未覆盖能力显式抛 `NotImplemented`。
-- **状态**：⬜ 待办
+- **状态**：✅ 已解决（P0-3，`tasker/request.js`；限频骨架 + NotImplemented 保护，插件用 `e.bot.request(...)`；测试 `test/request.test.js`）
 
 ### R9（P2）配置热重载不完整
 
