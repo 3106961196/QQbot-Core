@@ -97,4 +97,18 @@ Schema：`commonconfig/qqbot.js` · 模板：`default/qqbot.json`。
 
 ***
 
+## SDK vendor（qq-group-bot 本地补丁）
+
+运行时使用 **`src/vendor/qq-group-bot`**（`qq-group-bot@1.1.0` 的 vendored 副本，`QQBotTasker.js` 以相对路径 import），原因：官方包存在协议缺陷，直接改 `node_modules` 会被 `pnpm install` 冲掉。
+
+已修复（对照 `docs/ISSUES.md` R2）：
+
+1. **4008 频控断连**应 RESUME，官方包错误走 IDENTIFY → 已改为 `[4008, 4009]` 走 RESUME，其余（4006/4007 等）走 IDENTIFY
+2. **op=9 INVALID_SESSION** 官方包完全未处理（会话失效后静默死亡）→ 已补：降级重新鉴权
+3. **access_token 获取失败永久挂起**（promise 无 reject）→ 已补：失败退避重试（1/2/4/8s 共 5 次）+ 按有效期调度续期
+
+同步方式：官方包升级时，将 `node_modules/qq-group-bot` 重新拷入 `src/vendor/qq-group-bot` 并重放上述三处修改；`QQBotTasker.js` 的 import 路径保持不变。
+
+***
+
 MIT

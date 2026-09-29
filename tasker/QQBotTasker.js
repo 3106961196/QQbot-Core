@@ -1,4 +1,4 @@
-import { Bot as QQBotSDK } from 'qq-group-bot'
+import { Bot as QQBotSDK } from '../src/vendor/qq-group-bot/lib/index.js'
 import ConfigLoader from '../../../src/infrastructure/commonconfig/loader.js'
 import { MessageBuilder } from './message-builder.js'
 import { MessageHandler } from './message-handler.js'
@@ -33,7 +33,7 @@ AgentRuntime.tasker.push(
     id = 'QQBot'
     name = 'QQBot'
     path = this.name
-    version = 'qq-group-bot v1.1.0'
+    version = 'qq-group-bot v1.1.0 (vendored, patched)'
     sep = ':'
 
     config = null

@@ -19,12 +19,17 @@
 - **方案**：新增 `connection-manager.js`，Tasker 侧接管心跳监控/重连编排/退避限速日志；`QQBotTasker.connect` 改走 manager。
 - **状态**：⬜ 待办
 
-### R2（P0）SDK 断线重连分流不完整
+### R2（P0）SDK 断线重连与 token 续期缺陷（已核实代码，修正原报告描述）
 
-- **现象**：`sessionManager.startListen` 的 `close` 分支中，`DISCONNECT` 用 `data.eventMsg` 覆盖 `sessionRecord`；resume 触发只检查 `WebsocketCloseReason.resume`（4008/4009）。**4006/4007 语义未正确分流**（4006 无效会话应重新 Identify，4007 seq 错误也应重 Identify，二者都不应 Resume）。
-- **影响**：重连后在失效会话上反复 Resume，导致持续 4006/4007 抖动。
-- **方案**：fork 或 `pnpm patch` SDK，修正分流；Tasker 侧按 close code 显式决定 Identify / Resume。
-- **状态**：⬜ 待办
+- **现象**（以 `node_modules/qq-group-bot/lib/sessionManager.js` 为准）：
+  1. `DISCONNECT` 分支 `this.isReconnect = data.code === 4009` —— **4008（发送过快频控）带 `resume: true` 却走 IDENTIFY**，未按官方语义 RESUME；
+  2. `sessionRecord.seq` **未随 DISPATCH 更新**（L267 只 emit 不写 seq），RESUME 用旧 seq 可能连环 4007；
+  3. `getAccessToken` 失败时 `new Promise` 只有 resolve 无 reject → **promise 永久挂起**：启动靠 login 30s 超时兜底，运行期 token 续期失败后静默死亡、无重试无告警，且失败重试 `getNext(0)` 无退避（紧循环打爆 auth 接口）。
+- **原报告修正**："4006/4007 走错误 Resume" **不成立**（4006 不在关闭码表、4007 无 `resume` 标记，实际都走 IDENTIFY，正确）；4006 仅被记"未知错误"日志。
+- **代码核实补充**：`DISPATCH` 分支实际**已更新 seq**（`this.sessionRecord.seq = this.heartbeatParam.d = s`），原"seq 未更新"不成立；真正缺失的是 **op=9 INVALID_SESSION 完全未处理**（会话失效后静默死亡）。
+- **影响**：4008 频控后重连慢；token 刷新失败导致会话静默死亡。
+- **方案**：vendor SDK 入仓（`src/vendor/qq-group-bot`），修三处：4008→RESUME、INVALID_SESSION→IDENTIFY 降级、token 获取失败退避重试。
+- **状态**：✅ 已解决（P0-2，提交见 git log；接缝测试 `test/session-manager.test.js`）
 
 ### R3（P0）启动失败无重试
 
@@ -113,8 +118,9 @@
 ### E3（P1）SDK 打补丁方式决策
 
 - **选项**：`pnpm patch` fork 入仓（可提交可回滚，推荐） vs 直接改 node_modules（简单但 pnpm install 后丢失）。
-- **关联**：R2 / R10 需要接触 SDK。
-- **状态**：⬜ 待决策（正在了解 pnpm patch 细节）
+- **已决策**：**vendor 入仓**（`src/vendor/qq-group-bot`）。原因：本机 pnpm 未安装，`pnpm patch` 无法执行；vendor 副本可提交、可回滚、不随 install 丢失，运行时以相对路径 import（`QQBotTasker.js` L1），与根 workspace lockfile 无冲突（package.json 依赖声明保持 `qq-group-bot: 1.1.0` 不变）。
+- **关联**：R2 / R10（R10 仍在待办：SDK `Bot` 构造 `process.on('uncaughtException')` 吞异常）。
+- **状态**：✅ 已决策并落地（P0-2）
 
 ### E4（P1）媒体资源上传（并入 makeBotImage / makeRecord 稳定性）
 
