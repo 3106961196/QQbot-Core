@@ -24,7 +24,9 @@ export default class QQBotEvent extends ListenerBase {
       }
       this.ensureEventId(e)
       if (!this.markProcessed(e)) return
-      this.markAdapter(e, { isQQBot: true })
+      // 底层 ListenerBase API 是 markTasker（第二参传入 Tasker 特有旗标）——
+      // 原名 markAdapter 不存在导致 this.markAdapter is not a function
+      this.markTasker(e, { isQQBot: true })
       if (!e.msg && e.raw_message) e.msg = e.raw_message
       await this.plugins.deal(e)
     } catch (err) {
