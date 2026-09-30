@@ -124,6 +124,10 @@
 
 ### E4（P1）媒体资源上传（并入 makeBotImage / makeRecord 稳定性）
 
+- **现象**：`makeBotImage`/`makeRecord` 的 `toBotUpload` 分支调 `bot.sdk.uploadImage/uploadRecord`，但 vendor SDK 无此二方法（`qqBot.js` 仅有 `uploadMedia(target_id, target_type, ...)`），守卫恒 false → 死代码，媒体预上传静默失效。
+- **修复**：移除死分支。SDK 发送层（`entries/sender.js` image/audio/video 元素）已自动 `uploadMedia` 且正确携带 target_id/target_type，无需预上传。`makeRecord` 保留 silk 转码（发送前格式归一，真实功能）；`makeBotImage` 改造为纯"fileToUrl + imageSize 尺寸标注"（markdown 图片元数据）。`toBotUpload` 配置项保留（管理台历史 UI），语义改为媒体一律走 SDK 发送层。
+- **状态**：✅ 已解决（P1，`tasker/message-builder.js`）
+
 ### E5（P2）Markdown 模板引擎（用户已决定暂缓，仅记录）
 
 ---

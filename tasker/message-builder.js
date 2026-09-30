@@ -34,23 +34,18 @@ export class MessageBuilder {
     return AgentRuntime.String(msg).replace(/base64:\/\/.*?(,|]|")/g, "base64://...$1")
   }
 
+  /**
+   * 语音转码：非 silk 音频 → silk（SDK 只认 silk）。
+   *
+   * E4：移除原 `toBotUpload` bot 预上传分支 —— vendor SDK 无 `uploadRecord`
+   * 方法（守卫恒 false 的死代码），且 SDK 发送层（sender.js audio 元素）
+   * 会自动 `uploadMedia` 并携带 target_id/target_type，无需预上传。
+   * 转码逻辑保留：这是发送前必要的格式归一。
+   */
   async makeRecord(file) {
-    if (this.config?.toBotUpload) {
-      for (const [id, bot] of this.bots) {
-        if (bot.sdk.uploadRecord) {
-          try {
-            const url = await bot.sdk.uploadRecord(file)
-            if (url) return url
-          } catch (err) {
-            AgentRuntime.makeLog('error', `Bot ${id} 语音上传错误`, 'QQBot', err)
-          }
-        }
-      }
-    }
-
     const buffer = await AgentRuntime.Buffer(file)
     if (!Buffer.isBuffer(buffer)) return file
-    
+
     const { isSilk, encode: encodeSilk } = await this.initSilkWasm()
     if (isSilk(buffer)) return buffer
 
@@ -76,19 +71,24 @@ export class MessageBuilder {
     return (await QRCode.toDataURL(data)).replace("data:image/png;base64,", "base64://")
   }
 
+  /**
+   * 解析图片 → { url, width?, height? }（markdown 富文本图片用）。
+   *
+   * E4：移除原 `toBotUpload` bot 预上传分支 —— vendor SDK 无 `uploadImage`
+   * 方法（守卫恒 false 的死代码），且 SDK 发送层（sender.js image/audio/video
+   * 元素）会自动 `uploadMedia` 并正确携带 target_id/target_type，无需预上传。
+   * toBotUpload 配置项保留（管理台历史 UI），语义改为：媒体一律走 SDK 发送层。
+   */
   async makeBotImage(file) {
-    if (this.config?.toBotUpload) {
-      for (const [id, bot] of this.bots) {
-        if (bot.sdk.uploadImage) {
-          try {
-            const image = await bot.sdk.uploadImage(file)
-            if (image.url) return image
-          } catch (err) {
-            AgentRuntime.makeLog('error', `Bot ${id} 图片上传错误`, 'QQBot', err)
-          }
-        }
-      }
+    const image = { url: await AgentRuntime.fileToUrl(file) }
+    try {
+      const size = imageSize(await AgentRuntime.Buffer(file))
+      image.width = size.width
+      image.height = size.height
+    } catch (err) {
+      AgentRuntime.makeLog('debug', '图片分辨率检测错误（忽略，仅影响 markdown 尺寸标注）', 'QQBot', err)
     }
+    return image
   }
 
   async makeMarkdownImage(data, file, summary = "图片") {
