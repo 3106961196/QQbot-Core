@@ -327,6 +327,8 @@ export class MessageHandler {
       message_type: event.message_type,
       sub_type: event.sub_type,
       message_id: event.message_id,
+      event_id: event.message_id,  // R6：稳定事件键，供底层 markProcessed 去重（SDK DISPATCH 重放防护）
+
       get user_id() { return this.sender.user_id },
       message: event.message,
       raw_message: event.raw_message,
@@ -423,13 +425,20 @@ export class MessageHandler {
       }
     }
 
+    const scene = event.notice_type
+    // R4：SDK notice_type（friend/group/guild）统一为 OneBot 语义
+    // （friend→private，guild→group，与 makeGuildMessage 的改写一致），
+    // 避免 switch fallthrough 到 default 被静默丢弃
+    const message_type = scene === 'friend' ? 'private' : scene === 'guild' ? 'group' : 'group'
+
     const data = {
       raw: event,
       bot: AgentRuntime[id],
       self_id: id,
       post_type: "message",
       message_id: event.event_id ? `event_${event.event_id}` : event.notice_id,
-      message_type: event.notice_type,
+      event_id: event.event_id ? `event_${event.event_id}` : event.notice_id,  // R6：稳定事件键（去重）
+      message_type,
       sub_type: "callback",
       get user_id() { return this.sender.user_id },
       sender: { user_id: `${id}${this.sep}${event.operator_id}` },
@@ -465,19 +474,30 @@ export class MessageHandler {
     event.reply(0)
 
     switch (data.message_type) {
-      case "friend":
-        data.message_type = "private"
+      case "private":
         AgentRuntime.makeLog('info', `好友按钮点击事件：[${data.user_id}] ${data.raw_message}`, data.self_id)
         data.reply = msg => this.sendFriendMsg({ ...data, user_id: event.operator_id }, msg, { id: data.message_id })
         await this.setFriendMap(data)
         break
       case "group":
-        data.group_id = `${id}${this.sep}${event.group_id}`
-        AgentRuntime.makeLog('info', `群按钮点击事件：[${data.group_id}, ${data.user_id}] ${data.raw_message}`, data.self_id)
-        data.reply = msg => this.sendGroupMsg({ ...data, group_id: event.group_id }, msg, { id: data.message_id })
-        await this.setGroupMap(data)
-        break
-      case "guild":
+        // R4：guild 回调（频道按钮）与 QQ 群统一走 group 语义，group_id 用 qg_ 前缀（与 makeGuildMessage 一致）
+        if (scene === 'guild') {
+          data.group_id = `qg_${event.guild_id}-${event.channel_id}`
+          data.src_guild_id = event.guild_id
+          data.src_channel_id = event.channel_id
+          AgentRuntime.makeLog('info', `频道按钮点击事件：[${data.group_id}, ${data.user_id}] ${data.raw_message}`, data.self_id)
+          data.reply = msg => this.sendGuildMsg({
+            ...data,
+            guild_id: event.guild_id,
+            channel_id: event.channel_id,
+          }, msg, { id: data.message_id })
+          await this.setGroupMap(data)
+        } else {
+          data.group_id = `${id}${this.sep}${event.group_id}`
+          AgentRuntime.makeLog('info', `群按钮点击事件：[${data.group_id}, ${data.user_id}] ${data.raw_message}`, data.self_id)
+          data.reply = msg => this.sendGroupMsg({ ...data, group_id: event.group_id }, msg, { id: data.message_id })
+          await this.setGroupMap(data)
+        }
         break
       default:
         AgentRuntime.makeLog('warn', `未知按钮点击事件: ${AgentRuntime.String(event)}`, data.self_id)
@@ -486,31 +506,72 @@ export class MessageHandler {
     AgentRuntime.em(`qqbot.${data.post_type}`, data)
   }
 
-  makeNotice(id, event) {
+  /**
+   * R5：SDK notice 事件 → OneBot 风格结构化字段。
+   * key = `${notice_type}.${sub_type}`（guild 的 member.* 已带 member 前缀）。
+   * 值 = [notice_event 名, 需要补的语义字段]
+   */
+  static NOTICE_MAP = {
+    'friend.increase':        ['friend_add',    ['user_id']],
+    'friend.decrease':        ['friend_del',    ['user_id']],
+    'friend.receive_open':    ['friend_receive',['user_id']],
+    'friend.receive_close':   ['friend_receive',['user_id']],
+    'group.increase':         ['group_increase',['group_id', 'operator_id']],
+    'group.decrease':         ['group_decrease',['group_id', 'operator_id']],
+    'group.receive_open':     ['group_receive', ['group_id', 'operator_id']],
+    'group.receive_close':    ['group_receive', ['group_id', 'operator_id']],
+    'guild.increase':         ['guild_create',  ['guild_id', 'operator_id']],
+    'guild.update':           ['guild_update',  ['guild_id', 'operator_id']],
+    'guild.decrease':         ['guild_delete',  ['guild_id', 'operator_id']],
+    'guild.member.increase':  ['group_member_increase', ['guild_id', 'user_id', 'operator_id']],
+    'guild.member.update':    ['group_member_update',   ['guild_id', 'user_id', 'operator_id']],
+    'guild.member.decrease':  ['group_member_decrease', ['guild_id', 'user_id', 'operator_id']],
+    'channel.increase':       ['channel_create',['guild_id', 'channel_id', 'operator_id']],
+    'channel.update':         ['channel_update',['guild_id', 'channel_id', 'operator_id']],
+    'channel.decrease':       ['channel_delete',['guild_id', 'channel_id', 'operator_id']],
+    'channel.enter':          ['channel_enter', ['guild_id', 'channel_id', 'operator_id']],
+    'channel.exit':           ['channel_exit',  ['guild_id', 'channel_id', 'operator_id']],
+  }
+
+  async makeNotice(id, event) {
     const data = {
       raw: event,
       bot: AgentRuntime[id],
       self_id: id,
       post_type: event.post_type,
       notice_type: event.notice_type,
-      sub_type: event.sub_type,
       notice_id: event.notice_id,
+      event_id: event.notice_id || event.event_id,  // R6：稳定事件键（去重）
+      sub_type: event.sub_type,
       tasker: 'qqbot',
       isQQBot: true,
     }
 
-    switch (data.sub_type) {
-      case "action":
-        return this.makeCallback(id, event)
-      case "increase":
-      case "decrease":
-      case "update":
-      case "member.increase":
-      case "member.decrease":
-      case "member.update":
-        break
-      default:
-        AgentRuntime.makeLog('warn', `未知通知: ${AgentRuntime.String(event)}`, id)
+    // action（按钮回调）走 callback 路径
+    if (data.sub_type === 'action') {
+      data.message_type = event.notice_type === 'friend' ? 'private' : 'group'
+      return this.makeCallback(id, event)
     }
+
+    // R5：结构化映射 + 语义字段
+    const entry = MessageHandler.NOTICE_MAP[`${data.notice_type}.${data.sub_type}`]
+    if (entry) {
+      data.notice_event = entry[0]
+      const fields = entry[1]
+      for (const f of fields) {
+        if (event[f] !== undefined) data[f] = event[f]
+        else if (event[f.replace('_id', '_openid')] !== undefined) data[f] = event[f.replace('_id', '_openid')]
+        // R5：guild.member.* 的 user 在 event.user.id（SDK GuildMemberChangeNoticeEvent）
+        else if (f === 'user_id' && event.user?.id !== undefined) data[f] = event.user.id
+      }
+      if (data.notice_type === 'group' && data.group_id !== undefined) {
+        data.group_id = `${id}${this.sep}${data.group_id}`
+      }
+      AgentRuntime.makeLog('info', `通知: [${data.notice_event}] ${data.notice_id}`, id)
+    } else {
+      AgentRuntime.makeLog('warn', `未知通知: ${AgentRuntime.String(event)}`, id)
+    }
+
+    AgentRuntime.em(`qqbot.${data.post_type}`, data)
   }
 }
