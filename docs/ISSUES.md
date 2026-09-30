@@ -47,28 +47,28 @@
 - **现象**：`makeNotice` 的 `sub_type === "action"` 走 `makeCallback`；`makeCallback` 的 `message_type: event.notice_type`。SDK `ActionNoticeEvent.notice_type` 为 `'friend'/'group'/'guild'`，与 `makeMessage` 的 `message_type='private'/'group'` 语义不一致，switch fallthrough 到 default 只打 warn。两套路径（makeMessage 内嵌 / makeCallback）逻辑重复且易错。
 - **影响**：按钮点击事件可能被丢弃或双重处理。
 - **方案**：合并为单一回调入口，统一 `message_type` 语义。
-- **状态**：⬜ 待办
+- **状态**：✅ 已解决（P1，`tasker/message-handler.js`；构造期统一 notice_type→OneBot 语义（friend→private / guild→group），guild 回调补全 reply/setGroupMap 不再静默丢弃；测试 `test/message-handler.test.js`）
 
 ### R5（P1）notice 生命周期事件透传，语义未转换
 
 - **现象**：`makeNotice` 对 `increase/decrease/update/member.*` 仅 `break` 空处理；未映射为 `group_increase` / `friend_add` 等 OneBot 风格结构化字段。
 - **影响**：插件拿不到"加群/退群/加好友"结构化事件，生命周期功能无从下手。
 - **方案**：notice 结构化映射表，补 `group_id/user_id` 语义字段。
-- **状态**：⬜ 待办
+- **状态**：✅ 已解决（P1，`tasker/message-handler.js`；新增 `NOTICE_MAP` 映射 friend/group/guild/channel 全生命周期事件为 OneBot 风格，`makeNotice` 统一 `AgentRuntime.em` 进插件链，group 系列 group_id 带 `<self_id>:` 前缀；测试 `test/message-handler.test.js`）
 
 ### R6（P1）事件去重仅靠进程内 Set
 
 - **现象**：Listener `markProcessed` 为进程内 Set（不跨重启）；无按 `message_id` 滑动窗口去重。SDK 推送偶发重复（DISPATCH 重放）。
 - **影响**：同一消息被插件链处理多次。
 - **方案**：`event-dedup.js` 滑动窗口（message_id，300s，跨账号分桶，定时清理）。
-- **状态**：⬜ 待办
+- **状态**：✅ 已解决（P1，`tasker/message-handler.js`；根因是构造的 data 无 `event_id` 导致底层 `ensureEventId` 随机生成、`markProcessed` 永不去重。复用底层去重 Set：message/callback/notice 全补稳定 `event_id`（message_id / event_id / notice_id），重放第二次 `markProcessed=false`；未新造 event-dedup.js，复用 ListenerBase 已有上限清理且内存 Set≈滑动窗口，够用）
 
 ### R7（P1）`err.message` 裸取
 
 - **现象**：message-handler `M27/M82/M113` 等 `err.message` 直取，Tasker `errMsg()` 自实现，未统一 `normalizeError`。
 - **影响**：非 Error 抛错时日志失真。
 - **方案**：统一 `normalizeError`。
-- **状态**：⬜ 待办
+- **状态**：✅ 已解决（P2，新增 `tasker/utils.js` 自包含 `normalizeError`（与主仓同实现）；message-handler / QQBotTasker / http qqbot-api 全部 `err.message` 直取点归一路。全仓零残留）
 
 ---
 
@@ -86,21 +86,21 @@
 - **现象**：HTTP API 保存配置后仅 `tasker.loadConfig()`（重读内存）；已连接账号不增量同步（加账号→手动 connect；改 secret→不重连；删账号→不断开）。
 - **影响**：管理台改完配置与实际连接状态脱节。
 - **方案**：`syncBots()` 增量连接/断开/更新。
-- **状态**：⬜ 待办
+- **状态**：✅ 已解决（P2，`tasker/QQBotTasker.js` 新增 `syncBots()` 三向 diff：删账号→disconnect / 新账号→connectionManager.start / secret 变更→断连重连；接入 PUT+POST `/api/qqbot/config` 与 `/api/qqbot/reload`；测试 `test/sync-bots.test.js` 7 用例）
 
 ### R10（P2）SDK 吞异常
 
 - **现象**：SDK `Bot` 构造里 `process.on('uncaughtException', e => this.logger.debug(e.stack))` 吞掉未捕获异常。
 - **影响**：可能掩盖崩溃，难以排查。
 - **方案**：fork 或 `pnpm patch` SDK，移除或转交日志。
-- **状态**：⬜ 待办
+- **状态**：✅ 已解决（P2，vendor 修复 `src/vendor/qq-group-bot/lib/bot.js`：移除全局 `uncaughtException` 监听，交由宿主进程级处理；理由见代码注释）
 
 ### R11（P2）热路径动态 import
 
 - **现象**：`message-builder.makeRecord` 动态 `await import("node:fs/promises")`（L57/L67）。
 - **影响**：性能损耗小，但有规范统一空间。
 - **方案**：静态 import。
-- **状态**：⬜ 待办
+- **状态**：✅ 已解决（P2，`tasker/message-builder.js`：`node:fs/promises` L57/L67 静态化；`silk-wasm`（正式依赖）一并静态化，`initSilkWasm` 保留缓存门面）
 
 ---
 

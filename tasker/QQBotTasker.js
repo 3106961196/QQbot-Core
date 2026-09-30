@@ -4,6 +4,7 @@ import { MessageBuilder } from './message-builder.js'
 import { MessageHandler } from './message-handler.js'
 import { ConnectionManager } from './connection-manager.js'
 import { attachRequest } from './request.js'
+import { normalizeError } from './utils.js'
 
 const LOG = 'QQBot'
 /** 产品页在 www/qqbot/ → 底层挂 /qqbot/（/core/QQbot-Core/ 仅为整棵 www 调试直链） */
@@ -21,7 +22,7 @@ const INTENTS = [
 ]
 
 function errMsg(err) {
-  return Error.isError(err) ? err.message : String(err ?? '')
+  return normalizeError(err).message
 }
 
 /** botId 固定为 AppID；展示名用接口回写的 nickname */
@@ -182,6 +183,53 @@ AgentRuntime.tasker.push(
           continue
         }
         this.connectionManager.start(account)
+      }
+    }
+
+    /**
+     * R9：配置热重载增量同步 —— 对比「当前配置的账号列表」与「已连接 bots」，
+     * 三向 diff：
+     *   1. 删除账号：bots 有、配置无 → disconnect（停编排 + 彻底清理）
+     *   2. 新增账号：配置有、bots 无（且 enabled/有凭证/autoConnect）→ connectionManager.start
+     *   3. 凭证变更：均已连接但 clientSecret 变 → disconnect 后重新 start（后台重连）
+     * 非账号配置（toQRCode 等）不在此列，由 loadConfig() 覆盖（getter 直读 config）。
+     */
+    async syncBots() {
+      const accounts = this.config.accounts || []
+      const onlineIds = new Set(this.bots.keys())
+
+      // 1) 删除：已连接但配置已移除
+      for (const id of onlineIds) {
+        if (!accounts.some(a => botIdOf(a) === id)) {
+          AgentRuntime.makeLog('info', `配置热重载: 账号 ${id} 已从配置移除，断开连接`, LOG)
+          await this.disconnect(id)
+        }
+      }
+
+      // 2) 新增 / 3) 凭证变更（按配置顺序逐个核对）
+      for (const account of accounts) {
+        const id = botIdOf(account)
+        if (!id || account.enabled === false) continue
+
+        const current = this.bots.get(id)
+        if (!current) {
+          // 新增账号：走连接编排（幂等，含失败退避）
+          if (!account.clientSecret) {
+            AgentRuntime.makeLog('warn', `配置热重载: 账号 ${id} 缺少 clientSecret，跳过`, LOG)
+            continue
+          }
+          AgentRuntime.makeLog('info', `配置热重载: 检测到新账号 ${id}，建立连接`, LOG)
+          this.connectionManager.start(account)
+          continue
+        }
+
+        // 已连接：仅 clientSecret 变更才重连（避免无谓断连）
+        const connectedSecret = this.appid[id]?.info?.secret
+        if (account.clientSecret && connectedSecret && account.clientSecret !== connectedSecret) {
+          AgentRuntime.makeLog('info', `配置热重载: 账号 ${id} clientSecret 变更，重连`, LOG)
+          await this.disconnect(id)
+          this.connectionManager.start(account)
+        }
       }
     }
 

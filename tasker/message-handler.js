@@ -1,3 +1,5 @@
+import { normalizeError } from './utils.js'
+
 export class MessageHandler {
   constructor(tasker) {
     this._tasker = tasker
@@ -24,7 +26,7 @@ export class MessageHandler {
           rets.data.push(ret)
           if (ret.id) rets.message_id.push(ret.id)
         } catch (err) {
-          AgentRuntime.makeLog('error', `发送失败: ${err.message}`, data.self_id, err)
+          AgentRuntime.makeLog('error', `发送失败: ${normalizeError(err).message}`, data.self_id, err)
           rets.error.push(err)
           return false
         }
@@ -79,7 +81,7 @@ export class MessageHandler {
         rets.data.push(ret)
         if (ret.id) rets.message_id.push(ret.id)
       } catch (err) {
-        AgentRuntime.makeLog('error', `发送消息错误: ${err.message}`, data.self_id, err)
+        AgentRuntime.makeLog('error', `发送消息错误: ${normalizeError(err).message}`, data.self_id, err)
         rets.error.push(err)
       }
     }

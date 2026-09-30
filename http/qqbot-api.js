@@ -1,6 +1,7 @@
 import RuntimeUtil from '../../../src/utils/runtime-util.js';
 import runtimeConfig from '../../../src/infrastructure/config/config.js';
 import { HttpResponse } from '../../../src/utils/http-utils.js';
+import { normalizeError } from '../../../src/utils/normalize-error.js';
 import ConfigLoader from '../../../src/infrastructure/commonconfig/loader.js';
 import crypto from 'node:crypto';
 
@@ -220,7 +221,7 @@ export default {
             keyTtlSeconds: Math.floor(TEMP_KEY_EXPIRE_MS / 1000),
           }, '临时 Key 已写入主服日志，1 天内有效')
         } catch (err) {
-          RuntimeUtil.makeLog('error', `生成临时Key异常: ${err.message}`, 'QQBot', err)
+          RuntimeUtil.makeLog('error', `生成临时Key异常: ${normalizeError(err).message}`, 'QQBot', err)
           HttpResponse.error(res, err, 500, 'auth.temp-key')
         }
       }, 'qqbot.auth.temp-key')
@@ -393,6 +394,8 @@ export default {
         await config.write(data);
         const tasker = getTasker(Bot);
         if (tasker?.loadConfig) await tasker.loadConfig();
+        // R9：整包写配置后做增量同步（加/删/改账号即时生效），loadConfig 仅重读内存
+        if (tasker?.syncBots) await tasker.syncBots();
         HttpResponse.success(res, null, '配置已保存');
       }, 'qqbot.config.update')
     },
@@ -417,6 +420,8 @@ export default {
         await config.write(data);
         const tasker = getTasker(Bot);
         if (tasker?.loadConfig) await tasker.loadConfig();
+        // R9：整包写配置后做增量同步（加/删/改账号即时生效），loadConfig 仅重读内存
+        if (tasker?.syncBots) await tasker.syncBots();
         HttpResponse.success(res, null, '配置已保存');
       }, 'qqbot.config.write')
     },
@@ -442,7 +447,7 @@ export default {
           const probe = await probeConnect(appId, clientSecret);
           HttpResponse.success(res, { ok: true, expiresIn: probe.expiresIn }, '凭证有效（未占用网关登录）');
         } catch (err) {
-          RuntimeUtil.makeLog('error', `QQBot凭证校验失败: ${err.message}`, 'QQBotAPI', err);
+          RuntimeUtil.makeLog('error', `QQBot凭证校验失败: ${normalizeError(err).message}`, 'QQBotAPI', err);
           HttpResponse.error(res, err, 400, 'qqbot.test-connect');
         }
       }, 'qqbot.test-connect')
@@ -468,7 +473,7 @@ export default {
         try {
           await probeConnect(appId, clientSecret);
         } catch (err) {
-          RuntimeUtil.makeLog('warn', `拒绝保存凭证无效账号 ${appId}: ${err.message}`, 'QQBotAPI');
+          RuntimeUtil.makeLog('warn', `拒绝保存凭证无效账号 ${appId}: ${normalizeError(err).message}`, 'QQBotAPI');
           return HttpResponse.error(res, err, 400, '凭证无效，已拒绝写入配置');
         }
 
@@ -586,7 +591,7 @@ export default {
             HttpResponse.error(res, new Error('重连失败'), 400, 'qqbot.reconnect');
           }
         } catch (err) {
-          RuntimeUtil.makeLog('error', `QQBot重连失败: ${err.message}`, 'QQBotAPI', err);
+          RuntimeUtil.makeLog('error', `QQBot重连失败: ${normalizeError(err).message}`, 'QQBotAPI', err);
           HttpResponse.error(res, err, 400, 'qqbot.reconnect');
         }
       }, 'qqbot.reconnect')
@@ -606,9 +611,11 @@ export default {
 
         try {
           await tasker.loadConfig();
+          // R9：reload 后增量同步账号连接状态
+          await tasker.syncBots();
           HttpResponse.success(res, null, '配置已重新加载');
         } catch (err) {
-          RuntimeUtil.makeLog('error', `QQBot配置重载失败: ${err.message}`, 'QQBotAPI', err);
+          RuntimeUtil.makeLog('error', `QQBot配置重载失败: ${normalizeError(err).message}`, 'QQBotAPI', err);
           HttpResponse.error(res, err, 500, 'qqbot.reload');
         }
       }, 'qqbot.reload')
@@ -645,7 +652,7 @@ export default {
             HttpResponse.success(res, { user_id: masterKey }, '该用户已是主人')
           }
         } catch (err) {
-          RuntimeUtil.makeLog('error', `添加主人失败: ${err.message}`, 'QQBotAPI', err)
+          RuntimeUtil.makeLog('error', `添加主人失败: ${normalizeError(err).message}`, 'QQBotAPI', err)
           HttpResponse.error(res, err, 500, 'qqbot.master.add')
         }
       }, 'qqbot.master.add')

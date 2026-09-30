@@ -1,7 +1,9 @@
 import path from "node:path"
+import fs from "node:fs/promises"
 import { ulid } from "ulid"
 import QRCode from "qrcode"
 import imageSize from "image-size"
+import { encode as encodeSilk, isSilk } from "silk-wasm"
 
 export class MessageBuilder {
   static MAX_CALLBACKS = 1000
@@ -19,10 +21,10 @@ export class MessageBuilder {
 
   async initSilkWasm() {
     if (!this.silkWasm) {
-      const module = await import("silk-wasm")
+      // R11：silk-wasm 是 package.json 正式依赖，已静态 import，此处仅做缓存门面
       this.silkWasm = {
-        encode: module.encode,
-        isSilk: module.isSilk
+        encode: encodeSilk,
+        isSilk: isSilk
       }
     }
     return this.silkWasm
@@ -54,7 +56,6 @@ export class MessageBuilder {
 
     const convFile = path.join("temp", ulid())
     try {
-      const fs = await import("node:fs/promises")
       await fs.writeFile(convFile, buffer)
       await AgentRuntime.exec(`ffmpeg -i "${convFile}" -f s16le -ar 48000 -ac 1 "${convFile}.pcm"`)
       file = Buffer.from((await encodeSilk(await fs.readFile(`${convFile}.pcm`), 48000)).data)
@@ -64,7 +65,6 @@ export class MessageBuilder {
 
     for (const i of [convFile, `${convFile}.pcm`]) {
       try {
-        const fs = await import("node:fs/promises")
         await fs.unlink(i)
       } catch {}
     }

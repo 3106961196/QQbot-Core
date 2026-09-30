@@ -11,9 +11,12 @@ class Bot extends qqBot_1.QQBot {
         if (nodeVersion < 16) {
             this.logger.warn(`你的node版本(${process.version}) <16，可能会出现不可预测的错误，请升级node版本，为确保服务正常运行，请升级node版本`);
         }
-        process.on("uncaughtException", e => {
-            this.logger.debug(e.stack);
-        });
+        // R10 (vendored patch): 移除原 `process.on("uncaughtException", e => this.logger.debug(e.stack))`。
+        // 原因：库代码注册全局 uncaughtException 监听是反模式 ——
+        //  1) 以 debug 级别吞掉宿主进程所有未捕获异常，故障被静默掩盖；
+        //  2) 每 new Bot(账号) 注册一个，多账号时重复注册、重复打日志；
+        //  3) 宿主（XRK Runtime）已有进程级异常处理，SDK 不应擅自接管。
+        // 未捕获异常交由宿主默认处理（进程退出并打印堆栈），不再被 SDK 静默吞掉。
     }
     /**
      * 获取机器人信息
