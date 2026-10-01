@@ -106,3 +106,61 @@ test('R9：混合场景（加 A2 + 删 A3 + A1 改密）', async () => {
   const startedIds = t._started.map(a => a.appId).sort()
   assert.deepEqual(startedIds, ['A1', 'A2'])
 })
+
+// ============ markdown 配置桥接（syncMarkdownConfig）============
+
+/** 提取 syncMarkdownConfig 方法体（同 syncBots 的源码提取模式） */
+const mdSrc = readFileSync(new URL('../tasker/QQBotTasker.js', import.meta.url), 'utf8')
+const mdMatch = mdSrc.match(/syncMarkdownConfig\(\) \{[\s\S]*?\n    \}/)
+assert.ok(mdMatch, '应从 QQBotTasker.js 提取到 syncMarkdownConfig 方法体')
+const mdBody = mdMatch[0]
+  .replace(/^syncMarkdownConfig\(\) \{/, '')
+  .replace(/\n    \}$/, '')
+
+function makeMdTasker(config) {
+  const tasker = { config }
+  tasker.syncMarkdownConfig = new Function(
+    'tasker',
+    `return function () {${mdBody}}.bind(tasker)`,
+  )(tasker)
+  return tasker
+}
+
+test('md：markdownSupport=true 的账号派生为 raw 模式', () => {
+  const t = makeMdTasker({
+    accounts: [{ appId: 'A1', markdownSupport: true }],
+    markdown: { template: ['name'] },
+  })
+  t.syncMarkdownConfig()
+  assert.equal(t.config.markdown.A1, 'raw', '开启后 handler 的 mdMode 分支应命中 raw')
+  assert.deepEqual(t.config.markdown.template, ['name'], 'template 子配置应保留')
+})
+
+test('md：markdownSupport=false 的账号删除 appid 键', () => {
+  const t = makeMdTasker({
+    accounts: [{ appId: 'A2', markdownSupport: false }],
+    markdown: { A2: 'raw', template: [] },
+  })
+  t.syncMarkdownConfig()
+  assert.equal(t.config.markdown.A2, undefined, '关闭后应回落纯文本')
+  assert.equal(Object.hasOwn(t.config.markdown, 'A2'), false, '旧派生键应被删除')
+})
+
+test('md：无 accounts 时保持 markdown 原样', () => {
+  const t = makeMdTasker({ markdown: { template: ['x'] } })
+  t.syncMarkdownConfig()
+  assert.deepEqual(t.config.markdown, { template: ['x'] })
+})
+
+test('md：config 无 markdown 字段时初始化空对象且不抛错', () => {
+  const t = makeMdTasker({ accounts: [] })
+  t.syncMarkdownConfig()
+  assert.ok(t.config.markdown, '应初始化 markdown 对象')
+  assert.deepEqual(t.config.markdown, {})
+})
+
+test('md：appId 为空字符串的账号跳过', () => {
+  const t = makeMdTasker({ accounts: [{ appId: '', markdownSupport: true }] })
+  t.syncMarkdownConfig()
+  assert.deepEqual(t.config.markdown, {}, '空 appId 不应产生派生键')
+})

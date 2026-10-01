@@ -130,4 +130,23 @@
 
 ### E5（P2）Markdown 模板引擎（用户已决定暂缓，仅记录）
 
+### E6（P0）群内全量消息 `GROUP_MESSAGE_CREATE` 缺失（官方对比补全）
+
+- **现象**：对照[官方群聊消息事件文档](https://bot.q.qq.com/wiki/develop/api-v2/autogen/event/group_message_create.html)，SDK 的 `QQEvent` 枚举只有 `GROUP_AT_MESSAGE_CREATE`（@ 消息），没有 `GROUP_MESSAGE_CREATE`（群内全量消息）。原 SDK `constans.js` 里该 intents 被注释且误标为 `1<<24`（官方实际为 GROUP_AND_C2C_EVENT `1<<25`，与 `GROUP_AT_MESSAGE_CREATE`/`C2C_MESSAGE_CREATE` 同一位）。收到全量消息时 `QQEvent[event]` 兜底成 `"system"` → 事件被静默丢弃。
+- **影响**：群内非 @ 消息完全收不到；群主开启"接收所有消息"（`recv_msg_setting=all`）时能力缺失。
+- **修复**（vendor SDK + Core）：
+  - `constans.js`：恢复 `GROUP_MESSAGE_CREATE = 33554432`（官方 1<<25，带注释说明）
+  - `event/index.js`：`QQEvent.GROUP_MESSAGE_CREATE = 'message.group'` + 注册 `MessageEvent.parse`
+  - `qqBot.js` `dispatchEvent`：挂 `_raw_event`（原始 DISPATCH 事件名）+ 在 `mentions` 被 `Message.parse` 删除前挂 `_isAtBot`（全量模式下 @ 与非 @ 共用事件名，只能靠 mentions 判定）
+  - `QQBotTasker.js`：INTENTS 数组补 `'GROUP_MESSAGE_CREATE'`
+  - `message-handler.js` `makeGroupMessage`：被 @ 判定优先 `_isAtBot`，回落事件名；非 @ 群消息不再伪造 at 段
+  - 顺带修复 `GroupMessageEvent.group_id` 取官方 `group_openid` 字段（原 SDK 读 `payload.group_id` 得 undefined，兼容旧字段）
+- **状态**：✅ 已解决（`src/vendor/qq-group-bot/lib/{constans,event/index,event/message,qqBot}.js` + `tasker/{QQBotTasker,message-handler}.js`；测试 `test/sdk-event.test.js` 8 用例 + message-handler 3 用例）
+
+### E7（P1）账号级 `markdownSupport` 开关未桥接到消息构造链路
+
+- **现象**：管理台账号配置有 `markdownSupport`（boolean 开关），但 `MessageHandler`/`MessageBuilder` 读的是 `config.markdown[appid]`（'raw' | 'template' 模板模式）。两者无桥接 → 管理台开了 Markdown 也不生效。
+- **修复**：`QQBotTasker` 新增 `syncMarkdownConfig()`：账号级开启→派生 `config.markdown[appid]='raw'`（官方 markdown content 模式，SDK sender 已支持 msg_type=2），关闭→删除该键回落纯文本；保留 `markdown.template` 子配置。`loadConfig`/`persistAccountMeta` 两处赋值点调用。
+- **状态**：✅ 已解决（`tasker/QQBotTasker.js`；测试 `test/sync-bots.test.js` 5 用例）
+
 ---

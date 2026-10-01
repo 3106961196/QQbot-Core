@@ -22,7 +22,9 @@ exports.PrivateMessageEvent = PrivateMessageEvent;
 class GroupMessageEvent extends message_1.Message {
     constructor(bot, payload) {
         super(bot, payload);
-        this.group_id = payload.group_id;
+        // 官方 v2 事件字段为 group_openid（旧 SDK 用 payload.group_id 取不到）。
+        // 兼容两种写法：优先 group_openid。
+        this.group_id = payload.group_openid ?? payload.group_id;
         this.message_type = 'group';
     }
     async reply(message) {
@@ -115,7 +117,7 @@ var MessageEvent;
                 break;
             case 'message.group':
                 messageEvent = new GroupMessageEvent(this, payload);
-                this.logger.info(`recv from Group(${payload.group_id}): ${payload.raw_message}`);
+                this.logger.info(`recv from Group(${payload.group_openid ?? payload.group_id}): ${payload.raw_message}`);
                 break;
             case 'message.guild':
                 messageEvent = new GuildMessageEvent(this, payload);

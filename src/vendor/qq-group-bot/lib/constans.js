@@ -91,7 +91,14 @@ var Intends;
     Intends[Intends["DIRECT_MESSAGE"] = 4096] = "DIRECT_MESSAGE";
     Intends[Intends["OPEN_FORUMS_EVENTS"] = 262144] = "OPEN_FORUMS_EVENTS";
     Intends[Intends["AUDIO_OR_LIVE_CHANNEL_MEMBERS"] = 524288] = "AUDIO_OR_LIVE_CHANNEL_MEMBERS";
-    // GROUP_MESSAGE_CREATE = 1 << 24, // 群聊消息事件
+    // 群内全量消息。官方 Intent 为 GROUP_AND_C2C_EVENT (1<<25)，
+    // 与 GROUP_AT_MESSAGE_CREATE / C2C_MESSAGE_CREATE 同一位 ——
+    // 平台按「群主是否开启接收所有消息」决定推送 GROUP_MESSAGE_CREATE
+    // 还是 GROUP_AT_MESSAGE_CREATE（[官方文档](https://bot.q.qq.com/wiki/develop/api-v2/autogen/event/group_message_create.html)）。
+    // SDK 原版把此行注释掉且误标为 1<<24，导致该事件名不在 Intends 枚举里
+    // （getValidIntends 会 warn 跳过）、QQEvent 枚举也缺失 → 全量群消息被
+    // dispatchEvent 兜底成 "system" 丢弃。
+    Intends[Intends["GROUP_MESSAGE_CREATE"] = 33554432] = "GROUP_MESSAGE_CREATE";
     Intends[Intends["C2C_MESSAGE_CREATE"] = 33554432] = "C2C_MESSAGE_CREATE";
     Intends[Intends["GROUP_AT_MESSAGE_CREATE"] = 33554432] = "GROUP_AT_MESSAGE_CREATE";
     Intends[Intends["INTERACTION"] = 67108864] = "INTERACTION";

@@ -106,9 +106,23 @@ class QQBot extends events_1.EventEmitter {
         if (!payload || !event)
             return;
         const transformEvent = event_1.QQEvent[event] || 'system';
+        // 全量群消息（GROUP_MESSAGE_CREATE）模式下，@ 与非 @ 消息共用同一事件名，
+        // 平台已从 content 去除 @ 前缀，无法靠事件名或 content 判断是否被 @。
+        // 这里在 mentions 被 Message.parse 删除前，先判定是否 @ 了本机器人，
+        // 挂到 payload 上供上层（message-handler 补 at 段等）消费。
+        if (event === 'GROUP_MESSAGE_CREATE') {
+            payload._isAtBot = Array.isArray(payload.mentions)
+                ? payload.mentions.some((mention) => mention.id === this.self_id)
+                : false;
+        }
         const result = this.processPayload(event_id, transformEvent, payload);
         if (!result)
             return this.logger.debug('解析事件失败', wsRes);
+        // 保留原始 DISPATCH 事件名（如 GROUP_AT_MESSAGE_CREATE / GROUP_MESSAGE_CREATE），
+        // 供上层区分 @ 群消息与全量群消息（两者都映射为 message.group）
+        if (result && typeof result === 'object') {
+            result._raw_event = event;
+        }
         this.em(transformEvent, result);
     }
     /**

@@ -84,6 +84,56 @@ test('R6：按钮回调带稳定 event_id', async () => {
   assert.equal(emitted[0].data.event_id, 'event_evt-btn-1', '回调 event_id 派生自 event_id')
 })
 
+test('GROUP_MESSAGE_CREATE：非@群消息不插 at 段', async () => {
+  emitted.length = 0
+  const h = makeHandler()
+  // 模拟 SDK 解析出的 GroupMessageEvent（dispatchEvent 挂 _raw_event + _isAtBot）
+  await h.makeMessage('B1', {
+    ...groupMsgEvent('msg-gmc-1'),
+    _raw_event: 'GROUP_MESSAGE_CREATE',
+    _isAtBot: false,
+  })
+  const d = emitted[0].data
+  assert.equal(d.message_type, 'group')
+  assert.ok(!d.message.some(m => m.type === 'at' && m.qq === 'B1'),
+    '群内全量消息（未被@）不应伪造 at 段，否则插件误判为被@')
+})
+
+test('GROUP_MESSAGE_CREATE：全量模式下 @ 机器人的消息仍插 at 段（mentions 判定）', async () => {
+  emitted.length = 0
+  const h = makeHandler()
+  // 全量模式下 @ 消息事件名也是 GROUP_MESSAGE_CREATE，只能靠 _isAtBot 区分
+  await h.makeMessage('B1', {
+    ...groupMsgEvent('msg-gmc-at-1'),
+    _raw_event: 'GROUP_MESSAGE_CREATE',
+    _isAtBot: true,
+  })
+  const d = emitted[0].data
+  assert.ok(d.message.some(m => m.type === 'at' && m.qq === 'B1'),
+    '全量模式下被 @ 的消息应补 at 标记（mentions 命中）')
+})
+
+test('GROUP_AT_MESSAGE_CREATE：@群消息保留 at 段（兼容现有行为）', async () => {
+  emitted.length = 0
+  const h = makeHandler()
+  await h.makeMessage('B1', {
+    ...groupMsgEvent('msg-gat-1'),
+    _raw_event: 'GROUP_AT_MESSAGE_CREATE',
+    _isAtBot: true,
+  })
+  const d = emitted[0].data
+  assert.ok(d.message.some(m => m.type === 'at' && m.qq === 'B1'),
+    '@ 群消息保持原有 at 标记行为')
+})
+
+test('旧事件（无 _raw_event）：保持原有 at 行为（向后兼容）', async () => {
+  emitted.length = 0
+  const h = makeHandler()
+  await h.makeMessage('B1', groupMsgEvent('msg-legacy-1'))
+  const d = emitted[0].data
+  assert.ok(d.message.some(m => m.type === 'at' && m.qq === 'B1'))
+})
+
 test('R6：notice 事件带稳定 event_id（notice_id）', async () => {
   emitted.length = 0
   const h = makeHandler()

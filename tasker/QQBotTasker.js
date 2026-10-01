@@ -17,6 +17,8 @@ const INTENTS = [
   'INTERACTION',
   'MESSAGE_AUDIT',
   'GROUP_AT_MESSAGE_CREATE',
+  // 群内全量消息（官方 GROUP_MESSAGE_CREATE = 1<<24，配合 @ 检测）
+  'GROUP_MESSAGE_CREATE',
   'C2C_MESSAGE_CREATE',
   'PUBLIC_GUILD_MESSAGES',
 ]
@@ -49,10 +51,31 @@ AgentRuntime.tasker.push(
     messageBuilder = null
     messageHandler = null
 
+    /**
+     * 桥接账号级 markdownSupport → handler 读取的 config.markdown[appid]。
+     *
+     * 账号级开关存于 config.accounts[i].markdownSupport（boolean，管理台 UI），
+     * 而 MessageHandler / MessageBuilder 读的是 config.markdown[appid]
+     * （'raw' | 'template'）。二者原先无桥接，导致管理台开了 Markdown 也不生效。
+     * 这里统一派生：开启→'raw'（官方 markdown content 模板，SDK 支持），
+     * 关闭→删除该 appid 键回落纯文本。同时保留 config.markdown.template 子配置。
+     */
+    syncMarkdownConfig() {
+      const markdown = this.config.markdown = this.config.markdown || {}
+      for (const account of this.config.accounts || []) {
+        const id = String(account.appId || '')
+        if (!id) continue
+        if (account.markdownSupport) markdown[id] = 'raw'
+        else delete markdown[id]
+      }
+      return this.config
+    }
+
     async loadConfig() {
       const configInstance = ConfigLoader.get('qqbot')
       if (!configInstance) throw new Error('QQBot配置实例未找到')
       this.config = await configInstance.read()
+      this.syncMarkdownConfig()
       return this.config
     }
 
@@ -77,6 +100,7 @@ AgentRuntime.tasker.push(
       if (!changed) return
       await configInstance.write(data)
       this.config = data
+      this.syncMarkdownConfig()
     }
 
     async load() {

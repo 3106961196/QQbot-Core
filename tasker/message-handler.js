@@ -256,7 +256,17 @@ export class MessageHandler {
     data.group_id = `${data.self_id}${this.sep}${event.group_id}`
     AgentRuntime.makeLog('info', `群消息：[${data.group_id}, ${data.user_id}] ${data.raw_message}`, data.self_id)
     data.reply = msg => this.sendGroupMsg({ ...data, group_id: event.group_id }, msg, { id: data.message_id })
-    data.message.unshift({ type: 'at', qq: data.self_id })
+    // 仅「被 @ 机器人」的群消息才补 at 段，避免插件误判。
+    // 判定优先级：
+    //  1. SDK 在 mentions 被删前挂的 _isAtBot（全量模式 GROUP_MESSAGE_CREATE
+    //     下 @ 与非 @ 共用事件名，只能靠 mentions 区分）
+    //  2. 事件名回落：GROUP_AT_MESSAGE_CREATE（@ 模式）视为被 @；
+    //     旧事件（无 _raw_event）保持原有行为（兼容历史）
+    const isAt = event._isAtBot
+      ?? (event._raw_event ? event._raw_event === 'GROUP_AT_MESSAGE_CREATE' : true)
+    if (isAt) {
+      data.message.unshift({ type: 'at', qq: data.self_id })
+    }
     this.setGroupMap(data)
   }
 

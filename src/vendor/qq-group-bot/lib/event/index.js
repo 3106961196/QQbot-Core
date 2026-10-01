@@ -45,6 +45,10 @@ var QQEvent;
     QQEvent["INTERACTION_CREATE"] = "notice";
     QQEvent["C2C_MESSAGE_CREATE"] = "message.private.friend";
     QQEvent["GROUP_AT_MESSAGE_CREATE"] = "message.group";
+    // 群内普通消息（非 @机器人）：与 GROUP_AT_MESSAGE_CREATE 同为群消息，
+    // 官方要求自行检测是否 @ 机器人。SDK 原版缺失此事件枚举导致被兜底成
+    // "system" 事件丢弃，此前无法接收群内全量消息。
+    QQEvent["GROUP_MESSAGE_CREATE"] = "message.group";
     QQEvent["FORUM_THREAD_CREATE"] = "notice.forum.thread.create";
     QQEvent["FORUM_THREAD_UPDATE"] = "notice.forum.thread.update";
     QQEvent["FORUM_THREAD_DELETE"] = "notice.forum.thread.delete";
@@ -66,6 +70,7 @@ exports.EventParserMap.set(QQEvent.AT_MESSAGE_CREATE, message_1.MessageEvent.par
 exports.EventParserMap.set(QQEvent.DIRECT_MESSAGE_CREATE, message_1.MessageEvent.parse);
 exports.EventParserMap.set(QQEvent.MESSAGE_CREATE, message_1.MessageEvent.parse);
 exports.EventParserMap.set(QQEvent.GROUP_AT_MESSAGE_CREATE, message_1.MessageEvent.parse);
+exports.EventParserMap.set(QQEvent.GROUP_MESSAGE_CREATE, message_1.MessageEvent.parse);
 exports.EventParserMap.set(QQEvent.C2C_MESSAGE_CREATE, message_1.MessageEvent.parse);
 exports.EventParserMap.set(QQEvent.INTERACTION_CREATE, notice_1.ActionNoticeEvent.parse);
 exports.EventParserMap.set(QQEvent.FRIEND_ADD, notice_1.FriendChangeNoticeEvent.parse);
