@@ -146,11 +146,37 @@
   - `message-handler.js` `makeGroupMessage`：被 @ 判定优先 `_isAtBot`，回落事件名；非 @ 群消息不再伪造 at 段
   - 顺带修复 `GroupMessageEvent.group_id` 取官方 `group_openid` 字段（原 SDK 读 `payload.group_id` 得 undefined，兼容旧字段）
 - **状态**：✅ 已解决（`src/vendor/qq-group-bot/lib/{constans,event/index,event/message,qqBot}.js` + `tasker/{QQBotTasker,message-handler}.js`；测试 `test/sdk-event.test.js` 8 用例 + message-handler 3 用例）
+- **运行时验证（2026-10-02）**：**待补**。bot 连接与解析链路正常（见下方「运行时验证记录」），但 `GROUP_MESSAGE_CREATE` 需在已开启"接收所有消息"的群里由真人发一条非 @ 消息才会推送，本轮未触发。
 
 ### E7（P1）账号级 `markdownSupport` 开关未桥接到消息构造链路
 
 - **现象**：管理台账号配置有 `markdownSupport`（boolean 开关），但 `MessageHandler`/`MessageBuilder` 读的是 `config.markdown[appid]`（'raw' | 'template' 模板模式）。两者无桥接 → 管理台开了 Markdown 也不生效。
 - **修复**：`QQBotTasker` 新增 `syncMarkdownConfig()`：账号级开启→派生 `config.markdown[appid]='raw'`（官方 markdown content 模式，SDK sender 已支持 msg_type=2），关闭→删除该键回落纯文本；保留 `markdown.template` 子配置。`loadConfig`/`persistAccountMeta` 两处赋值点调用。
 - **状态**：✅ 已解决（`tasker/QQBotTasker.js`；测试 `test/sync-bots.test.js` 5 用例）
+- **运行时验证（2026-10-02）**：**输入端已确认**。`GET /api/qqbot/config` 返回 `accounts[0].markdownSupport = true`，`data/QQBot.json` 中 `markdown.template` 有 10 个参数名但**无 `1905680729` 键** —— 正是 `syncMarkdownConfig` 要派生的场景。桥接结果为内存态（`GET config` 走 `config.read()` 原始文件，不暴露派生值），需 `POST /api/qqbot/reload` 触发 `loadConfig()` 后从发送行为或日志侧证，**本轮因主服被外部终止未完成**。
+
+---
+
+## 运行时验证记录（2026-10-02，主服 pid 20468 / 2537 端口）
+
+一次真实进程的连接期观察，用于佐证 P0-1 / P0-2 / E6 / E7 的运行时状态：
+
+| 观测项 | 结果 |
+| --- | --- |
+| vendor SDK 版本串 | `qq-group-bot v1.1.0 (vendored, patched)` —— **补丁确实生效**（该字符串由 vendor 副本注入） |
+| Gateway 握手 | `op:0 READY` → `连接成功` → `QQBot 哈基米 已连接`，一次成功，无重连风暴 |
+| 心跳稳定性 | 34 次心跳，间隔 **41–48s**（官方要求 30–60s），**零失败、零重连** |
+| 运行时长 | 12:25:35 → 12:50:09（约 25 分钟） |
+| 错误日志 | **0 条 error**；5 条 warn 全部是本轮人工 API 探测造成（temp-key 一次性被消费后重试 + `unauthorized IP`） |
+| 进程终止原因 | **外部终止**（无崩溃堆栈、`restart.log` 无异常重启记录），非自身崩溃 |
+
+结论：P0-1（连接编排/退避/限速）与 P0-2（vendor SDK 心跳/重连/token 续期）在真实生产连接上健康。E6/E7 的运行期行为仍需一次真实群消息 + `reload` 分别补证。
+
+### 复现要点（管理 API 鉴权）
+
+- 端点前缀 `/api/qqbot/*`，全部经 `ensureAuthorized`；未带 session 时 `/status` 返回 **403**、`/accounts` 返回 **502**。
+- `POST /api/qqbot/auth/temp-key` 取 key（**同一 IP 5 分钟冷却 1 次**），key 只写入主服日志（`logs/app.log` 中 `QQBot temp-key: <32位hex>`），1 天有效。
+- `POST /api/qqbot/auth/temp-login` 换 session，**key 一次性**（`validateTempKey` 命中即 `delete`）。session cookie `qqbot_session` **绑定 IP**，跨进程复用易失败。
+- 正确姿势：**在同一个脚本/连接内**依次完成"取 key → 从日志捞 key → temp-login → 调业务 API"，避免 IP 形式差异与 key 复用失败。
 
 ---
