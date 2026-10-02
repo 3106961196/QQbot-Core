@@ -532,6 +532,13 @@ export class MessageHandler {
     'group.decrease':         ['group_decrease',['group_id', 'operator_id']],
     'group.receive_open':     ['group_receive', ['group_id', 'operator_id']],
     'group.receive_close':    ['group_receive', ['group_id', 'operator_id']],
+    // E8：群成员进出与入群申请（官方 GROUP_MEMBER_EVENT 1<<24）。
+    // 注意与 guild.member.* 同名 notice_event 但语义不同（群 vs 频道），
+    // 字段上群侧没有 operator_id（官方事件体不含操作人）。
+    'group.member.increase':  ['group_member_increase', ['group_id', 'user_id', 'real_id']],
+    'group.member.decrease':  ['group_member_decrease', ['group_id', 'user_id', 'real_id']],
+    // join_request_id 需在审批接口原样回传，故一并透出
+    'group.join.request':     ['group_join_request',    ['group_id', 'user_id', 'username', 'join_request_id', 'apply_source', 'verify_info']],
     'guild.increase':         ['guild_create',  ['guild_id', 'operator_id']],
     'guild.update':           ['guild_update',  ['guild_id', 'operator_id']],
     'guild.decrease':         ['guild_delete',  ['guild_id', 'operator_id']],

@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.AuditNoticeEvent = exports.ReplyChangeNoticeEvent = exports.PostChangeNoticeEvent = exports.ThreadChangeNoticeEvent = exports.ForumNoticeEvent = exports.GuildMemberChangeNoticeEvent = exports.ChannelChangeNoticeEvent = exports.GuildChangeNoticeEvent = exports.GroupChangeNoticeEvent = exports.GroupReceiveNoticeEvent = exports.FriendChangeNoticeEvent = exports.FriendReceiveNoticeEvent = exports.GuildActionNoticeEvent = exports.GroupActionNoticeEvent = exports.FriendActionNoticeEvent = exports.ActionNoticeEvent = exports.NoticeEvent = void 0;
+exports.AuditNoticeEvent = exports.ReplyChangeNoticeEvent = exports.PostChangeNoticeEvent = exports.ThreadChangeNoticeEvent = exports.ForumNoticeEvent = exports.GuildMemberChangeNoticeEvent = exports.ChannelChangeNoticeEvent = exports.GuildChangeNoticeEvent = exports.GroupChangeNoticeEvent = exports.GroupReceiveNoticeEvent = exports.FriendChangeNoticeEvent = exports.FriendReceiveNoticeEvent = exports.GuildActionNoticeEvent = exports.GroupActionNoticeEvent = exports.FriendActionNoticeEvent = exports.ActionNoticeEvent = exports.GroupJoinRequestNoticeEvent = exports.GroupMemberChangeNoticeEvent = exports.NoticeEvent = void 0;
 const _1 = require("..");
 class NoticeEvent {
     constructor(bot, payload) {
@@ -110,7 +110,10 @@ class FriendChangeNoticeEvent extends NoticeEvent {
         this.notice_type = 'friend';
         this.sub_type = sub_type;
         this.user_id = payload.openid;
-        this.time = Math.floor(payload.timestamp / 1000);
+        // 官方 timestamp 为 Unix 秒（文档示例 1784570534），原实现 /1000 是错的
+        this.time = payload.timestamp;
+        // 补 notice_id：否则 Core 侧 R6 去重拿到 undefined
+        this.notice_id = `${payload.openid}.${payload.timestamp}`;
         bot.logger.info(`好友${this.actionText}：${this.user_id}`);
     }
 }
@@ -135,7 +138,10 @@ class GroupReceiveNoticeEvent extends NoticeEvent {
         this.sub_type = sub_type;
         this.group_id = payload.group_openid;
         this.operator_id = payload.op_member_openid;
-        this.time = Math.floor(payload.timestamp / 1000);
+        // 官方 timestamp 为 Unix 秒，原实现 /1000 是错的
+        this.time = payload.timestamp;
+        // 补 notice_id：否则 Core 侧 R6 去重拿到 undefined
+        this.notice_id = `${payload.group_openid}.${payload.op_member_openid}.${payload.timestamp}`;
         bot.logger.info(`群${this.actionText}主动消息接收：${this.group_id}. 操作人：${this.operator_id}`);
     }
 }
@@ -150,6 +156,82 @@ exports.GroupReceiveNoticeEvent = GroupReceiveNoticeEvent;
         }
     };
 })(GroupReceiveNoticeEvent || (exports.GroupReceiveNoticeEvent = GroupReceiveNoticeEvent = {}));
+/**
+ * 群成员加入/退出（官方 GROUP_MEMBER_ADD / GROUP_MEMBER_REMOVE，Intent GROUP_MEMBER_EVENT 1<<24）。
+ *
+ * 与 GroupChangeNoticeEvent（机器人被加群/退群）区分：本类对应**群成员**变动。
+ * 官方事件体只有 timestamp / group_openid / member_openid / user_openid 四项，
+ * 没有操作人字段，故 operator_id 留空。
+ */
+class GroupMemberChangeNoticeEvent extends NoticeEvent {
+    get actionText() {
+        return this.sub_type === `member.increase` ? '加入' : '退出';
+    }
+    constructor(bot, sub_type, payload) {
+        super(bot, payload);
+        this.notice_type = 'group';
+        this.sub_type = sub_type;
+        this.group_id = payload.group_openid;
+        this.user_id = payload.member_openid;
+        this.real_id = payload.user_openid;
+        // 官方 timestamp 是 Unix 秒（文档示例 1784276757），不是毫秒
+        this.time = payload.timestamp;
+        // SDK 各 NoticeEvent 原本都不设 notice_id，Core 侧 R6 去重因此拿到 undefined
+        // 而失效；此处按官方唯一字段组合派生稳定键。
+        this.notice_id = `${payload.group_openid}.${payload.member_openid}.${payload.timestamp}`;
+        bot.logger.info(`群成员${this.actionText}：${this.group_id}. 成员：${this.user_id}`);
+    }
+}
+exports.GroupMemberChangeNoticeEvent = GroupMemberChangeNoticeEvent;
+(function (GroupMemberChangeNoticeEvent) {
+    GroupMemberChangeNoticeEvent.parse = function (event, payload) {
+        switch (event) {
+            case "notice.group.member.increase":
+                return new GroupMemberChangeNoticeEvent(this, 'member.increase', payload);
+            case "notice.group.member.decrease":
+                return new GroupMemberChangeNoticeEvent(this, 'member.decrease', payload);
+        }
+    };
+})(GroupMemberChangeNoticeEvent || (exports.GroupMemberChangeNoticeEvent = GroupMemberChangeNoticeEvent = {}));
+/**
+ * 用户申请加群（官方 GROUP_JOIN_REQUEST，Intent GROUP_MEMBER_EVENT 1<<24）。
+ *
+ * 官方限定：只有机器人是群管理员时才会收到此事件。
+ * join_request_id 需在审批接口原样回传，故完整保留；verify_info 内含
+ * method / verify_message / review_qa_list（管理员问答），auto_approved 携带
+ * 自动审批通过的 strategy_id。
+ */
+class GroupJoinRequestNoticeEvent extends NoticeEvent {
+    constructor(bot, payload) {
+        super(bot, payload);
+        this.notice_type = 'group';
+        this.sub_type = 'join.request';
+        this.group_id = payload.group_openid;
+        this.user_id = payload.member_openid;
+        this.real_id = payload.union_openid;
+        this.username = payload.username;
+        this.join_request_id = payload.join_request_id;
+        this.apply_at = payload.apply_at;        // RFC3339
+        this.apply_source = payload.apply_source; // self_apply | invited
+        this.invited_by = payload.invited_by;
+        this.is_bot = payload.bot;
+        this.verify_info = payload.verify_info;
+        this.auto_approved = payload.auto_approved;
+        this.risk_tips = payload.risk_tips;
+        this.notice_id = payload.join_request_id
+            || `${payload.group_openid}.${payload.member_openid}.${payload.apply_at}`;
+        bot.logger.info(`用户申请加群：${this.group_id}. 申请人：${this.username}(${this.user_id})`);
+    }
+}
+exports.GroupJoinRequestNoticeEvent = GroupJoinRequestNoticeEvent;
+(function (GroupJoinRequestNoticeEvent) {
+    GroupJoinRequestNoticeEvent.parse = function (event, payload) {
+        switch (event) {
+            case "notice.group.join.request":
+                return new GroupJoinRequestNoticeEvent(this, payload);
+        }
+    };
+})(GroupJoinRequestNoticeEvent || (exports.GroupJoinRequestNoticeEvent = GroupJoinRequestNoticeEvent = {}));
 class GroupChangeNoticeEvent extends NoticeEvent {
     get actionText() {
         return this.sub_type === `increase` ? '新增' : '减少';
@@ -160,7 +242,10 @@ class GroupChangeNoticeEvent extends NoticeEvent {
         this.sub_type = sub_type;
         this.group_id = payload.group_openid;
         this.operator_id = payload.op_member_openid;
-        this.time = Math.floor(payload.timestamp / 1000);
+        // 官方 timestamp 为 Unix 秒，原实现 /1000 是错的
+        this.time = payload.timestamp;
+        // 补 notice_id：否则 Core 侧 R6 去重拿到 undefined
+        this.notice_id = `${payload.group_openid}.${payload.op_member_openid}.${payload.timestamp}`;
         bot.logger.info(`群${this.actionText}：${this.group_id}. 操作人：${this.operator_id}`);
     }
 }

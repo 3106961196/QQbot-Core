@@ -101,6 +101,17 @@ var Intends;
     Intends[Intends["GROUP_MESSAGE_CREATE"] = 33554432] = "GROUP_MESSAGE_CREATE";
     Intends[Intends["C2C_MESSAGE_CREATE"] = 33554432] = "C2C_MESSAGE_CREATE";
     Intends[Intends["GROUP_AT_MESSAGE_CREATE"] = 33554432] = "GROUP_AT_MESSAGE_CREATE";
+    // 群成员变动类事件，官方 Intent 为 GROUP_MEMBER_EVENT (1<<24)。
+    // SDK 原版完全没有这一位 —— 而这正是官方文档给 GROUP_MEMBER_ADD /
+    // GROUP_MEMBER_REMOVE / GROUP_JOIN_REQUEST 标注的 Intent
+    // （分别见 group_member_add / group_member_remove / group_join_request 官方页），
+    // 导致群成员增减、入群申请三类事件无法订阅，收到也会被 dispatchEvent
+    // 兜底成 "system" 丢弃。注意此位与上面的 GROUP_AND_C2C_EVENT (1<<25) 无关，
+    // 原版注释把 1<<24 误标给 GROUP_MESSAGE_CREATE 是错的。
+    Intends[Intends["GROUP_MEMBER_EVENT"] = 16777216] = "GROUP_MEMBER_EVENT";
+    Intends[Intends["GROUP_MEMBER_ADD"] = 16777216] = "GROUP_MEMBER_ADD";
+    Intends[Intends["GROUP_MEMBER_REMOVE"] = 16777216] = "GROUP_MEMBER_REMOVE";
+    Intends[Intends["GROUP_JOIN_REQUEST"] = 16777216] = "GROUP_JOIN_REQUEST";
     Intends[Intends["INTERACTION"] = 67108864] = "INTERACTION";
     Intends[Intends["MESSAGE_AUDIT"] = 134217728] = "MESSAGE_AUDIT";
     Intends[Intends["FORUMS_EVENTS"] = 268435456] = "FORUMS_EVENTS";

@@ -38,6 +38,12 @@ var QQEvent;
     QQEvent["GROUP_DEL_ROBOT"] = "notice.group.decrease";
     QQEvent["GROUP_MSG_REJECT"] = "notice.group.receive_close";
     QQEvent["GROUP_MSG_RECEIVE"] = "notice.group.receive_open";
+    // 群成员变动与入群申请（官方 Intent GROUP_MEMBER_EVENT 1<<24，SDK 原版完全缺失）。
+    // 与上面的 GROUP_MSG_*（机器人被加群/退群、消息接收开关）是不同语义：
+    // 这里对应的是**群成员**进出与申请加群。
+    QQEvent["GROUP_MEMBER_ADD"] = "notice.group.member.increase";
+    QQEvent["GROUP_MEMBER_REMOVE"] = "notice.group.member.decrease";
+    QQEvent["GROUP_JOIN_REQUEST"] = "notice.group.join.request";
     QQEvent["FRIEND_ADD"] = "notice.friend.increase";
     QQEvent["FRIEND_DEL"] = "notice.friend.decrease";
     QQEvent["C2C_MSG_REJECT"] = "notice.friend.receive_close";
@@ -81,6 +87,9 @@ exports.EventParserMap.set(QQEvent.GROUP_ADD_ROBOT, notice_1.GroupChangeNoticeEv
 exports.EventParserMap.set(QQEvent.GROUP_DEL_ROBOT, notice_1.GroupChangeNoticeEvent.parse);
 exports.EventParserMap.set(QQEvent.GROUP_MSG_RECEIVE, notice_1.GroupReceiveNoticeEvent.parse);
 exports.EventParserMap.set(QQEvent.GROUP_MSG_REJECT, notice_1.GroupReceiveNoticeEvent.parse);
+exports.EventParserMap.set(QQEvent.GROUP_MEMBER_ADD, notice_1.GroupMemberChangeNoticeEvent.parse);
+exports.EventParserMap.set(QQEvent.GROUP_MEMBER_REMOVE, notice_1.GroupMemberChangeNoticeEvent.parse);
+exports.EventParserMap.set(QQEvent.GROUP_JOIN_REQUEST, notice_1.GroupJoinRequestNoticeEvent.parse);
 exports.EventParserMap.set(QQEvent.GUILD_CREATE, notice_1.GuildChangeNoticeEvent.parse);
 exports.EventParserMap.set(QQEvent.GUILD_UPDATE, notice_1.GuildChangeNoticeEvent.parse);
 exports.EventParserMap.set(QQEvent.GUILD_DELETE, notice_1.GuildChangeNoticeEvent.parse);

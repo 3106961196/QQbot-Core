@@ -153,7 +153,38 @@
 - **现象**：管理台账号配置有 `markdownSupport`（boolean 开关），但 `MessageHandler`/`MessageBuilder` 读的是 `config.markdown[appid]`（'raw' | 'template' 模板模式）。两者无桥接 → 管理台开了 Markdown 也不生效。
 - **修复**：`QQBotTasker` 新增 `syncMarkdownConfig()`：账号级开启→派生 `config.markdown[appid]='raw'`（官方 markdown content 模式，SDK sender 已支持 msg_type=2），关闭→删除该键回落纯文本；保留 `markdown.template` 子配置。`loadConfig`/`persistAccountMeta` 两处赋值点调用。
 - **状态**：✅ 已解决（`tasker/QQBotTasker.js`；测试 `test/sync-bots.test.js` 5 用例）
-- **运行时验证（2026-10-02）**：**输入端已确认**。`GET /api/qqbot/config` 返回 `accounts[0].markdownSupport = true`，`data/QQBot.json` 中 `markdown.template` 有 10 个参数名但**无 `1905680729` 键** —— 正是 `syncMarkdownConfig` 要派生的场景。桥接结果为内存态（`GET config` 走 `config.read()` 原始文件，不暴露派生值），需 `POST /api/qqbot/reload` 触发 `loadConfig()` 后从发送行为或日志侧证，**本轮因主服被外部终止未完成**。
+- **运行时验证（2026-10-02）**：✅ **已闭环**。输入端：`GET /api/qqbot/config` 返回 `accounts[0].markdownSupport = true`，`data/QQBot.json` 的 `markdown` 只有 `template` 子键、无 `1905680729` —— 正是 `syncMarkdownConfig` 要派生的场景。执行端：启动路径（bot 能 online 即证明 `loadConfig()` 未抛错）+ `POST /api/qqbot/reload` 返回 **200「配置已重新加载」**（36ms，期间零异常日志）——`loadConfig()` 会 reject 并返回 500 的路径未触发，故 `syncMarkdownConfig()` 在真实进程中执行成功。派生值本身为内存态（`GET config` 走 `config.read()` 原始文件，接口不暴露派生结果），属设计如此。
+
+### E8（P0）群成员进出与入群申请事件缺失（官方能力扫描补全）
+
+对照[官方群聊管理 → 事件](https://bot.q.qq.com/wiki/develop/api-v2/autogen/event/group_member_add.html)逐页核实，发现**官方 Intent `GROUP_MEMBER_EVENT (1<<24)` 在 SDK 里完全不存在**（`Intends` 枚举里没有 `16777216` 这个值），连带三类事件都无法订阅、收到也会被 `dispatchEvent` 兜底成 `"system"` 静默丢弃：
+
+| 官方事件 | 官方 Intent | 修复前 | 修复后 |
+| --- | --- | --- | --- |
+| `GROUP_MEMBER_ADD`（群成员加入） | `GROUP_MEMBER_EVENT (1<<24)` | ❌ 无 intents 位、无事件名 | ✅ `notice.group.member.increase` |
+| `GROUP_MEMBER_REMOVE`（群成员退出） | `GROUP_MEMBER_EVENT (1<<24)` | ❌ 同上 | ✅ `notice.group.member.decrease` |
+| `GROUP_JOIN_REQUEST`（用户申请加群） | `GROUP_MEMBER_EVENT (1<<24)` | ❌ 同上 | ✅ `notice.group.join.request` |
+
+- **顺带纠正一处历史误标**：SDK 原注释把 `1<<24` 写在 `GROUP_MESSAGE_CREATE` 名下并整行注释掉。官方逐页核实后确认 —— `1<<25` 是 `GROUP_AND_C2C_EVENT`（群消息，E6 已按此修正），`1<<24` 是 `GROUP_MEMBER_EVENT`（群成员/入群申请），两者是**不同的位**，不能互换。
+- **修复**（vendor SDK + Core）：
+  - `constans.js`：补 `Intends.GROUP_MEMBER_EVENT` 及三个事件名 → `16777216`（含与 `1<<25` 区别的注释）
+  - `notice.js`：新增 `GroupMemberChangeNoticeEvent`（`group_id`/`user_id`=member_openid/`real_id`=user_openid，官方事件体无操作人故 `operator_id` 留空）与 `GroupJoinRequestNoticeEvent`（完整保留 `join_request_id`、`apply_source`、`verify_info`（含 `review_qa_list`）、`auto_approved.strategy_id` 等审批必需字段）
+  - `event/index.js`：三个 `QQEvent` 枚举 + `EventParserMap` 注册
+  - `QQBotTasker.js`：`INTENTS` 数组补三个事件名（同时修正上一轮遗留的 `1<<24` 旧注释）
+  - `message-handler.js` `NOTICE_MAP`：补三条结构化映射；`group.join.request` 额外透出 `join_request_id`/`username`/`apply_source`/`verify_info`，使插件可直接对接审批接口
+- **官方前置条件（已在文档记录）**：`GROUP_JOIN_REQUEST` **只有机器人是群管理员时才会推送**。
+- **状态**：✅ 已解决（`src/vendor/qq-group-bot/lib/{constans,event/index,event/notice}.js` + `tasker/{QQBotTasker,message-handler}.js`；测试 `test/sdk-event.test.js` 7 用例 + `test/message-handler.test.js` 3 用例）
+
+### R12（P1）SDK notice 事件缺 `notice_id` 且 `timestamp` 单位错误
+
+- **现象**：`FriendChangeNoticeEvent` / `GroupChangeNoticeEvent` / `GroupReceiveNoticeEvent` **都不设 `notice_id`**，而 Core 侧 `makeNotice` 用 `event_id: event.notice_id || event.event_id` 供 R6 去重 → 实际恒为 `undefined`。现有 R6 测试用手工构造对象（自带 `notice_id: 'ntc-1'`）断言，恰好掩盖了真实解析路径上的这个洞。
+- **同时发现**：三者都写 `this.time = Math.floor(payload.timestamp / 1000)`，但官方事件体 `timestamp` 是 **Unix 秒**（文档示例 `1784570534`），除 1000 后得到 `1784570`（约 1970 年）。`makeNotice` 未透出 `time`，故对现有行为无影响，属潜伏缺陷。
+- **修复**：三个类补 `notice_id`（按官方唯一字段组合派生稳定键：`group_openid.op_member_openid.timestamp` / `openid.timestamp`），并把 `time` 改为不除 1000 的秒值；新增的 `GroupMemberChangeNoticeEvent` / `GroupJoinRequestNoticeEvent` 同样带正确 `notice_id` 与时间戳。
+- **状态**：✅ 已解决（`src/vendor/qq-group-bot/lib/event/notice.js`；测试 `test/sdk-event.test.js` 2 用例，覆盖 notice_id 稳定性与秒级时间戳）
+
+### 待查（不影响本轮交付）
+
+- **`MESSAGE_AUDIT`（1<<27）**：Tasker 的 `INTENTS` **已订阅**，SDK 也有对应 Intent 位，但 `QQEvent` 枚举缺该事件名 → 收到审核结果会被兜底成 `"system"` 丢弃。属频道主动消息审核场景，需先核实官方事件体字段再补，故本轮未动。
 
 ---
 

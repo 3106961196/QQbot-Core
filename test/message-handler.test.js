@@ -196,6 +196,57 @@ test('R5：guild.member.increase → group_member_increase 且带 user_id', asyn
   assert.equal(d.operator_id, 'op_1')
 })
 
+test('E8：group.member.increase → group_member_increase 且带 user_id/real_id', async () => {
+  emitted.length = 0
+  const h = makeHandler()
+  await h.makeNotice('B1', {
+    // 模拟 SDK GroupMemberChangeNoticeEvent（官方 GROUP_MEMBER_ADD 解析结果）
+    post_type: 'notice', notice_type: 'group', sub_type: 'member.increase',
+    notice_id: 'g_1.m_1.1784276757',
+    group_id: 'g_openid_7', user_id: 'm_openid_3', real_id: 'u_openid_3',
+    time: 1784276757,
+  })
+  const d = emitted[0].data
+  assert.equal(d.notice_event, 'group_member_increase')
+  assert.equal(d.group_id, 'B1:g_openid_7', 'group_id 应加 bot 前缀（与消息侧一致）')
+  assert.equal(d.user_id, 'm_openid_3', 'user_id 取官方 member_openid')
+  assert.equal(d.real_id, 'u_openid_3', 'real_id 取官方 user_openid')
+})
+
+test('E8：group.member.decrease → group_member_decrease', async () => {
+  emitted.length = 0
+  const h = makeHandler()
+  await h.makeNotice('B1', {
+    post_type: 'notice', notice_type: 'group', sub_type: 'member.decrease',
+    notice_id: 'g_1.m_1.1784276759',
+    group_id: 'g_openid_7', user_id: 'm_openid_3', real_id: 'u_openid_3',
+    time: 1784276759,
+  })
+  const d = emitted[0].data
+  assert.equal(d.notice_event, 'group_member_decrease')
+  assert.equal(d.user_id, 'm_openid_3')
+})
+
+test('E8：group.join.request → group_join_request 且透出 join_request_id', async () => {
+  emitted.length = 0
+  const h = makeHandler()
+  await h.makeNotice('B1', {
+    post_type: 'notice', notice_type: 'group', sub_type: 'join.request',
+    notice_id: 'AVKiFWpdy0-req-id',
+    group_id: 'g_openid_9', user_id: 'm_openid_9', username: '申请人',
+    join_request_id: 'AVKiFWpdy0-req-id', apply_source: 'self_apply',
+    verify_info: { method: 'verify_message', verify_message: '就快乐了' },
+  })
+  const d = emitted[0].data
+  assert.equal(d.notice_event, 'group_join_request')
+  assert.equal(d.group_id, 'B1:g_openid_9')
+  assert.equal(d.join_request_id, 'AVKiFWpdy0-req-id',
+    '审批接口需原样回传该 id，插件要能直接取到')
+  assert.equal(d.username, '申请人')
+  assert.equal(d.apply_source, 'self_apply')
+  assert.deepEqual(d.verify_info, { method: 'verify_message', verify_message: '就快乐了' })
+})
+
 test('R5：未知 notice 记录 warn 但仍 emit（插件可见，不静默吞）', async () => {
   emitted.length = 0
   logs.length = 0
