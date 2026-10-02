@@ -1,6 +1,6 @@
 # QQbot-Core 问题清单
 
-> 全部风险/问题登记于此，随重构推进逐项闭环（状态：⬜ 待办 / 🔧 进行中 / ✅ 已解决 / 🚫 搁置）。
+> 全部风险/问题登记于此，随重构推进逐项闭环（状态：⬜ 待办 / 🔧 进行中 / ✅ 已解决 / ⏸ 暂缓 / 🚫 搁置）。
 
 ## 说明
 
@@ -108,12 +108,14 @@
 
 ### E1（P1）启动失败重试 + 限速日志（并入 R1/R3 一起做）
 
+- **状态**：✅ 已解决（随 R1/R3 落地：`tasker/connection-manager.js` 启动退避 5/10/30/60s、5s 内断连 ≥3 次强制 60s 限速、DEAD 自动重连 + 状态日志；测试 `test/connection-manager.test.js`）
+
 ### E2（P0）测试基线
 
 - **现象**：package.json 无 test script，仓库无任何测试。
 - **影响**：重构无回归保障。
 - **方案**：`node:test` 建三层（单元 / 接缝 mock WS / e2e），先锁现状再改。
-- **状态**：⬜ 待办
+- **状态**：✅ 已解决（`package.json` 已有 `test` / `test:fast` script；6 个测试文件 57 用例全绿：connection-manager / session-manager / message-handler / sdk-event / sync-bots / request）
 
 ### E3（P1）SDK 打补丁方式决策
 
@@ -129,6 +131,8 @@
 - **状态**：✅ 已解决（P1，`tasker/message-builder.js`）
 
 ### E5（P2）Markdown 模板引擎（用户已决定暂缓，仅记录）
+
+- **状态**：⏸ 暂缓（用户决定）。注：`msg_type=2` Markdown **发送链路本身已支持**（vendor SDK `entries/sender.js` 的 `markdown` 元素 + `message-builder` 的 `makeMarkdownMsg`/`makeRawMarkdownMsg` + handler `mdMode` 分支），且 E7 已把账号级开关桥接到该链路。暂缓的只是"模板参数化渲染引擎"（`markdown.template` 那套自定义模板 → custom_template_id 的进一步编排）。
 
 ### E6（P0）群内全量消息 `GROUP_MESSAGE_CREATE` 缺失（官方对比补全）
 
