@@ -239,4 +239,28 @@ test('既有 notice 事件也补上了 notice_id 与秒级 timestamp', () => {
       { group_openid: 'g_1', op_member_openid: 'op_1', timestamp: 1784570534 })
   assert.ok(group.notice_id, 'GroupChangeNoticeEvent 原版不设 notice_id')
   assert.equal(group.time, 1784570534)
+
+  // 官方 C2C_MSG_RECEIVE 的 timestamp 为 integer（Unix 秒，文档示例 1784570617），
+  // 该类原实现与 FriendChange 同源同错，上一轮漏修
+  const receive = noticeModule.FriendReceiveNoticeEvent.parse
+    .call(bot, 'notice.friend.receive_open', { openid: 'u_1', timestamp: 1784570617 })
+  assert.ok(receive.notice_id, 'FriendReceiveNoticeEvent 原版不设 notice_id')
+  assert.equal(receive.time, 1784570617, 'C2C_MSG_RECEIVE 的 /1000 是错算')
+})
+
+test('入群申请事件把 RFC3339 apply_at 归一为秒级 time', () => {
+  const ev = noticeModule.GroupJoinRequestNoticeEvent.parse
+    .call(makeNoticeBot(), 'notice.group.join.request', JOIN_REQUEST_PAYLOAD)
+  // 2026-08-05T16:21:40+08:00 → 秒
+  assert.equal(ev.time, Math.floor(Date.parse(JOIN_REQUEST_PAYLOAD.apply_at) / 1000))
+  assert.equal(ev.apply_at, JOIN_REQUEST_PAYLOAD.apply_at, '原字符串同时保留，供插件直接展示')
+  // 2026-08-05T16:21:40+08:00 → UTC 08:21:40，验证时区归一正确
+  assert.equal(new Date(ev.time * 1000).toISOString(), '2026-08-05T08:21:40.000Z')
+})
+
+test('apply_at 非法时不应把 time 写成 NaN', () => {
+  const ev = noticeModule.GroupJoinRequestNoticeEvent.parse.call(makeNoticeBot(),
+    'notice.group.join.request', { ...JOIN_REQUEST_PAYLOAD, apply_at: 'not-a-date' })
+  assert.equal(ev.time, undefined, '无法解析的时间应缺省，而不是污染出 NaN')
+  assert.ok(ev.notice_id, '无 apply_at 时仍要有稳定去重键')
 })

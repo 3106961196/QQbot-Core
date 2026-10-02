@@ -86,7 +86,11 @@ class FriendReceiveNoticeEvent extends NoticeEvent {
         this.notice_type = 'friend';
         this.sub_type = sub_type;
         this.user_id = payload.openid;
-        this.time = Math.floor(payload.timestamp / 1000);
+        // 官方 C2C_MSG_RECEIVE/REJECT 的 timestamp 为 integer（Unix 秒，
+        // 文档示例 1784570617），原实现 /1000 与 FriendChange 同源同错
+        this.time = payload.timestamp;
+        // 补 notice_id：否则 Core 侧 R6 去重拿到 undefined
+        this.notice_id = `${payload.openid}.${payload.timestamp}`;
         bot.logger.info(`好友${this.actionText}主动消息接收：${this.user_id}`);
     }
 }
@@ -218,6 +222,12 @@ class GroupJoinRequestNoticeEvent extends NoticeEvent {
         this.verify_info = payload.verify_info;
         this.auto_approved = payload.auto_approved;
         this.risk_tips = payload.risk_tips;
+        // 官方只给 apply_at（RFC3339 字符串），归一为秒级 time，
+        // 与 GuildChange/ChannelChange 等的 new Date(...)/1000 口径一致
+        if (payload.apply_at) {
+            const t = new Date(payload.apply_at).getTime()
+            if (!Number.isNaN(t)) this.time = Math.floor(t / 1000)
+        }
         this.notice_id = payload.join_request_id
             || `${payload.group_openid}.${payload.member_openid}.${payload.apply_at}`;
         bot.logger.info(`用户申请加群：${this.group_id}. 申请人：${this.username}(${this.user_id})`);

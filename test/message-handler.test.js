@@ -247,6 +247,42 @@ test('E8：group.join.request → group_join_request 且透出 join_request_id',
   assert.deepEqual(d.verify_info, { method: 'verify_message', verify_message: '就快乐了' })
 })
 
+test('R12：notice 事件透出秒级 time（此前 Core 层根本没给插件时间基准）', async () => {
+  emitted.length = 0
+  const h = makeHandler()
+  await h.makeNotice('B1', {
+    post_type: 'notice', notice_type: 'group', sub_type: 'member.increase',
+    notice_id: 'g_1.m_1.1784276757',
+    group_id: 'g_openid_7', user_id: 'm_openid_3', time: 1784276757,
+  })
+  const d = emitted[0].data
+  assert.equal(d.time, 1784276757, 'SDK 侧已归一为秒，Core 应原样透出')
+  assert.equal(d.notice_id, 'g_1.m_1.1784276757')
+})
+
+test('R12：未知 notice（未匹配 NOTICE_MAP）同样透出 time', async () => {
+  emitted.length = 0
+  const h = makeHandler()
+  await h.makeNotice('B1', {
+    post_type: 'notice', notice_type: 'group', sub_type: 'future.event',
+    notice_id: 'nf-1', group_id: 'g_openid_7', time: 1784276800,
+  })
+  const d = emitted[0].data
+  assert.equal(d.time, 1784276800, '时间字段不该因 notice_event 未识别而丢失')
+})
+
+test('R12：本身无 time 的事件不写入该键（不污染出 undefined）', async () => {
+  emitted.length = 0
+  const h = makeHandler()
+  await h.makeNotice('B1', {
+    post_type: 'notice', notice_type: 'group', sub_type: 'member.increase',
+    notice_id: 'g_1.m_1.x', group_id: 'g_openid_7', user_id: 'm_openid_3',
+    // 无 time（模拟 forum / action 等本来就没有该字段的事件）
+  })
+  const d = emitted[0].data
+  assert.equal('time' in d, false, '应缺省而不是写入 undefined 键')
+})
+
 test('R5：未知 notice 记录 warn 但仍 emit（插件可见，不静默吞）', async () => {
   emitted.length = 0
   logs.length = 0

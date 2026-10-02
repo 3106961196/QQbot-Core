@@ -591,6 +591,11 @@ export class MessageHandler {
       AgentRuntime.makeLog('warn', `未知通知: ${AgentRuntime.String(event)}`, id)
     }
 
+    // 事件发生时间（秒）。SDK 侧各 notice 类的 time 口径已统一为秒
+    // （Unix 秒直传或 RFC3339 归一），此前 Core 层未透出，插件拿不到时间基准。
+    // forum / action 回调等事件无 time 字段，故条件透出。
+    if (event.time !== undefined) data.time = event.time
+
     AgentRuntime.em(`qqbot.${data.post_type}`, data)
   }
 }
